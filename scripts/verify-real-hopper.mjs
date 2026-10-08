@@ -1,7 +1,5 @@
 import { execFile } from "node:child_process";
-import { readFile, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { promisify } from "node:util";
 
 import { Client } from "@modelcontextprotocol/client";
@@ -14,8 +12,10 @@ import {
   requirePseudocode,
 } from "../dist/application/RealHopperAssertions.js";
 import { HOPPER_PROVIDER_IDENTITY } from "../dist/hopper/HopperProvider.js";
+import { HOPPER_TARGET_LEASE_DIRECTORY } from "../dist/hopper/HopperTargetLease.js";
 import { REA_WORKFLOW_PROVIDER } from "../dist/application/InvestigationProviders.js";
 import { loadRealHopperFixtureTargets } from "./lib/real-hopper-fixture.mjs";
+import { verifyHopperStringObjects } from "./lib/real-hopper-search.mjs";
 import {
   requireBridgeDiagnostic,
   requireBridgeProgress,
@@ -30,7 +30,10 @@ import {
   requireMcpResult,
   requireWorkflowEvidenceProvider,
 } from "./lib/mcp-verifier-results.mjs";
-import { verifyHopperFunctionBasics } from "./lib/real-hopper-function-basics.mjs";
+import {
+  verifyHopperTerminalInstructions,
+  verifyHopperFunctionBasics,
+} from "./lib/real-hopper-function-basics.mjs";
 import { openAndVerifyLargeFixture } from "./lib/real-hopper-exhaustive-search.mjs";
 import { completeVerifierRun, createVerifierRun } from "./lib/verifier-run.mjs";
 import { requireHopperSelection } from "./lib/real-hopper-selection.mjs";
@@ -40,6 +43,7 @@ import {
   verifyHopperLifecycleAndCli,
 } from "./lib/real-hopper-boundaries.mjs";
 import { startUnrelatedHopperSentinel } from "./lib/unrelated-hopper-sentinel.mjs";
+import { snapshotHopperRuntime } from "./lib/real-hopper-cleanup.mjs";
 const execFileAsync = promisify(execFile);
 const verifierRun = createVerifierRun();
 const timeout = 180_000;
@@ -54,7 +58,10 @@ const parseServerArgs = (encoded) => {
 };
 
 const runtimeParent = process.platform === "darwin" ? "/tmp" : tmpdir();
-const sessionsBefore = new Set(await readdir(runtimeParent));
+const sessionsBefore = await snapshotHopperRuntime(
+  runtimeParent,
+  HOPPER_TARGET_LEASE_DIRECTORY,
+);
 const ownedProcessIds = new Set();
 const textValue = mcpTextValue;
 const requireSuccessfulTool = requireMcpResult;
@@ -247,7 +254,7 @@ let stderrBytes = 0;
 const stderrChunks = [];
 transport.stderr?.on("data", (chunk) => {
   stderrBytes += chunk.length;
-  if (stderrBytes <= 16_384) stderrChunks.push(chunk.toString("utf8"));
+  stderrChunks.push(chunk.toString("utf8"));
 });
 const client = new Client({ name: "real-hopper-verifier", version: "1.0.0" });
 const unrelatedHopper = await startUnrelatedHopperSentinel();
@@ -460,9 +467,29 @@ try {
     options,
   );
   if (closed.isError === true) throw new Error(textValue(closed));
+  let unicodeStrings = null;
+  let terminalInstructions = null;
+  if (fixtureTargets.unicode !== undefined) {
+    const call = async (name, args = {}) =>
+      requireSuccessfulTool(
+        await client.callTool({ name, arguments: args }, options),
+        name,
+      );
+    await call("open_binary", { path: fixtureTargets.unicode.path });
+    terminalInstructions = await verifyHopperTerminalInstructions(call);
+    unicodeStrings = await verifyHopperStringObjects(call, [
+      { value: "REA_UTF16_é_😀", encoding: "utf-16-le" },
+      { value: 'REA_UTF16_ESCAPED_é_"\\line\nend\t\r', encoding: "utf-16-le" },
+      { value: "\nREA_UTF16_LEADING_é", encoding: "utf-16-le" },
+    ]);
+    await call("close_binary");
+  }
   const lifecycleAndCli = await verifyHopperLifecycleAndCli(client, options, {
     primary: targetA,
     secondary: targetB,
+    ...(fixtureTargets.unicode === undefined
+      ? {}
+      : { unicode: fixtureTargets.unicode.path }),
     ownedProcessIds,
   });
   const closedSession = requireMcpResult(
@@ -489,6 +516,8 @@ try {
     segmentCount: firstOverview.segment_count,
     analyses: [firstAnalysis, secondAnalysis],
     fixtureAnalysis,
+    unicodeStrings,
+    terminalInstructions,
     boundaryContracts,
     lifecycleAndCli,
     inventoryCounts,
@@ -519,26 +548,25 @@ try {
 }
 
 await new Promise((resolve) => setTimeout(resolve, 500));
-for (const entry of await readdir(runtimeParent, { withFileTypes: true })) {
-  if (
-    !entry.isDirectory() ||
-    !entry.name.startsWith("rea-") ||
-    sessionsBefore.has(entry.name)
-  )
-    continue;
-  let ownership;
-  try {
-    ownership = JSON.parse(
-      await readFile(join(runtimeParent, entry.name, "ownership.json"), "utf8"),
-    );
-  } catch (cause) {
-    if (cause.code === "ENOENT") continue;
-    throw cause;
-  }
-  if (ownedProcessIds.has(ownership.parent_pid))
-    throw new Error(
-      `An owned Hopper runtime leaked its directory: ${entry.name}`,
-    );
+const sessionsAfter = [
+  ...(await snapshotHopperRuntime(
+    runtimeParent,
+    HOPPER_TARGET_LEASE_DIRECTORY,
+    ownedProcessIds,
+  )),
+]
+  .filter((path) => !sessionsBefore.has(path))
+  .sort();
+if (sessionsAfter.length > 0) {
+  await writeVerificationReport({
+    ...summary,
+    unrelatedHopperSurvived,
+    cleanShutdown: false,
+    retainedRuntimePaths: sessionsAfter,
+  });
+  throw new Error(
+    `The MCP runtime retained Hopper resources: ${sessionsAfter.join(", ")}`,
+  );
 }
 if (summary === undefined)
   throw new Error("Real-Hopper verification did not produce a summary");
@@ -550,12 +578,18 @@ if (
   throw new Error(
     "The verifier's process lineage did not prove owned child cleanup",
   );
-await new Promise((resolve, reject) => {
-  process.stdout.write(
-    `${JSON.stringify({ verifier_run: completedVerifierRun, ...summary, unrelatedHopperSurvived, cleanShutdown: true }, null, 2)}\n`,
-    (cause) => {
+await writeVerificationReport({
+  verifier_run: completedVerifierRun,
+  ...summary,
+  unrelatedHopperSurvived,
+  cleanShutdown: true,
+});
+
+async function writeVerificationReport(report) {
+  await new Promise((resolve, reject) => {
+    process.stdout.write(`${JSON.stringify(report, null, 2)}\n`, (cause) => {
       if (cause) reject(cause);
       else resolve();
-    },
-  );
-});
+    });
+  });
+}
