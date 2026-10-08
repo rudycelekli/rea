@@ -497,7 +497,7 @@ For a client that requires manual configuration, use:
   "mcpServers": {
     "rea": {
       "command": "npx",
-      "args": ["-y", "rea-agents@6.0.0", "mcp"]
+      "args": ["-y", "rea-agents@7.0.0", "mcp"]
     }
   }
 }
