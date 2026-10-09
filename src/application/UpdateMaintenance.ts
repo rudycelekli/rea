@@ -6,6 +6,7 @@ import { PRODUCT_IDENTITY } from "../identity.js";
 import { isOwnedClientRegistrationCommand } from "./ClientRegistrationIdentity.js";
 import { readClientRegistrationStatuses } from "./ClientRegistrationStatus.js";
 import {
+  clientServerForcedEnabled,
   effectiveClientServer,
   grokServerListedDisabled,
   parseClientConfiguration,
@@ -77,8 +78,10 @@ export const existingMaintenanceScope = async (
         disabled: z.boolean().optional(),
       })
       .parse(effectiveClientServer(parsed, PRODUCT_IDENTITY.mcpServerKey));
+    // OMP's enabledServers allowlist runs an entry marked `enabled: false`.
     if (
-      enabled.enabled !== false &&
+      (enabled.enabled !== false ||
+        clientServerForcedEnabled(parsed, PRODUCT_IDENTITY.mcpServerKey)) &&
       enabled.disabled !== true &&
       !(
         parsed.dialect === "grok" &&
