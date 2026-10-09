@@ -14,6 +14,7 @@ import type {
 import {
   readExactJavaScriptLiteral,
   semanticStaticPropertyName,
+  semanticStaticPropertyKey,
 } from "./javascriptAstValues.js";
 import { compareCodePoints } from "../canonicalOrdering.js";
 
@@ -124,18 +125,17 @@ export const moduleFactory = (
   return undefined;
 };
 
-/** Derive a literal or explicitly computed module key. */
+/** Keep exact module keys separate from synthetic labels for dynamic syntax. */
 export const modulePropertyName = (
   property: t.ObjectMethod | t.ObjectProperty | t.SpreadElement,
-): string =>
-  t.isObjectMethod(property) || t.isObjectProperty(property)
-    ? property.computed &&
-      !t.isStringLiteral(property.key) &&
-      !t.isNumericLiteral(property.key)
-      ? `[computed@${String(property.start ?? -1)}]`
-      : semanticStaticPropertyName(property.key, property.computed) ||
-        `[unknown@${String(property.start ?? -1)}]`
-    : `[unknown@${String(property.start ?? -1)}]`;
+): { readonly key: string; readonly exact: boolean } => {
+  if (t.isObjectMethod(property) || t.isObjectProperty(property)) {
+    const key = semanticStaticPropertyKey(property.key, property.computed);
+    if (key !== null) return { key, exact: true };
+    return { key: `[computed@${String(property.start ?? -1)}]`, exact: false };
+  }
+  return { key: `[unknown@${String(property.start ?? -1)}]`, exact: false };
+};
 
 /** Read the factory-local bundler require parameter when declared. */
 export const factoryRequireName = (

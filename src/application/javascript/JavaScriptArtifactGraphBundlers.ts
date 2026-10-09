@@ -1,3 +1,4 @@
+import { javascriptDisplayText } from "../../domain/javascript/javascriptAstValues.js";
 import type { ApplicationNode } from "../../domain/javascript/javascriptApplicationGraphSchemas.js";
 import type { JavaScriptBundlerRegistration } from "../../domain/javascript/javascriptStaticAnalysisTypes.js";
 import type { JavaScriptArtifactFile } from "../../domain/javascript/javascriptArtifactFiles.js";
@@ -126,7 +127,7 @@ const addBundlerModuleNodes = (
       ),
       observations: [
         {
-          label: moduleValue.module_key,
+          label: javascriptDisplayText(moduleValue.module_key),
           properties: {
             path: file.path,
             bundler: registration.bundler,

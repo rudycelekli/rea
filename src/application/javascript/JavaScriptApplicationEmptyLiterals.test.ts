@@ -343,3 +343,21 @@ it("reports malformed source roots without manufacturing an original path", asyn
     }),
   );
 });
+
+it("preserves an empty bundler module key through public application analysis", async () => {
+  const output = await analyzeSource(
+    'globalThis.webpackChunkApp.push([[1], { "": function() {} }]);',
+  );
+  const node = output.graph.nodes.find(
+    (node) =>
+      node.kind === "javascript-module" &&
+      node.observations.some(
+        ({ properties }) => properties.module_key !== undefined,
+      ),
+  );
+  expect(node?.observations[0]?.properties.module_key).toBe("");
+  expect(node?.identity).toMatchObject({
+    strategy: "artifact-local-key",
+    key: "",
+  });
+});

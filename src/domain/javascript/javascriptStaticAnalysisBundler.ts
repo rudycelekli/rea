@@ -157,9 +157,8 @@ const recoverBundlerModule = (
 } | null => {
   const factory = moduleFactory(property);
   if (factory === undefined) return null;
-  const key = modulePropertyName(property);
-  if (key.startsWith("[computed@") || key.startsWith("[unknown@"))
-    accumulator.unknownFindings += 1;
+  const { key, exact } = modulePropertyName(property);
+  if (!exact) accumulator.unknownFindings += 1;
   const fingerprint = fingerprintJavaScriptAst(factory);
   const exportsValue = collectJavaScriptExports(factory);
   const requireName = factoryRequireName(factory);
