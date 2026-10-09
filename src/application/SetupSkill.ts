@@ -1,8 +1,10 @@
-import { mkdir, readFile, rm } from "node:fs/promises";
+import { constants } from "node:fs";
+import { chmod, copyFile, mkdir, readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import writeFileAtomic from "write-file-atomic";
 
 import { PRODUCT_IDENTITY } from "../identity.js";
+import { readRegularFile } from "./RegularFileRead.js";
 
 const SKILL_FILES = [
   "SKILL.md",
@@ -126,6 +128,19 @@ export const canonicalSkillNeedsInstall = async (
 const writeText = (path: string, content: string): Promise<void> =>
   writeFileAtomic(path, content, { encoding: "utf8", mode: 0o600 });
 
+const preserveSkillBackup = async (destination: string): Promise<void> => {
+  const backup = `${destination}.rea.backup`;
+  try {
+    await copyFile(destination, backup, constants.COPYFILE_EXCL);
+    await chmod(backup, 0o600);
+  } catch (cause: unknown) {
+    if (!(cause instanceof Error && "code" in cause && cause.code === "EEXIST"))
+      throw cause;
+    // An existing first snapshot must remain readable and is never replaced.
+    await readRegularFile(backup);
+  }
+};
+
 const restoreSkillFiles = async (
   changed: readonly CanonicalSkillFile[],
 ): Promise<void> => {
@@ -141,23 +156,26 @@ export const installCanonicalSkill = async (
   clientIds: readonly string[] = [],
   claudeSkillsDirectory?: string,
 ): Promise<"installed" | "unchanged" | "failed"> => {
-  let changed: readonly CanonicalSkillFile[] = [];
+  const attempted: CanonicalSkillFile[] = [];
   try {
     const canonical = await canonicalSkillFiles(
       home,
       clientIds,
       claudeSkillsDirectory,
     );
-    changed = canonical.filter(({ content, original }) => original !== content);
+    const changed = canonical.filter(
+      ({ content, original }) => original !== content,
+    );
     if (changed.length === 0) return "unchanged";
 
     for (const { destination, original } of changed) {
       await mkdir(dirname(destination), { recursive: true });
-      if (original !== undefined)
-        await writeText(`${destination}.rea.backup`, original);
+      if (original !== undefined) await preserveSkillBackup(destination);
     }
-    for (const { destination, content } of changed)
-      await writeText(destination, content);
+    for (const file of changed) {
+      attempted.push(file);
+      await writeText(file.destination, file.content);
+    }
     for (const { destination, content } of changed)
       if ((await readFile(destination, "utf8")) !== content)
         throw new Error(`skill readback mismatch: ${destination}`);
@@ -166,7 +184,7 @@ export const installCanonicalSkill = async (
     // Install failure preserves the original error outcome; report cause inline.
     void cause;
     try {
-      await restoreSkillFiles(changed);
+      await restoreSkillFiles(attempted);
     } catch (restoreCause: unknown) {
       // Per-file backups remain beside changed files for operator recovery.
       void restoreCause;
