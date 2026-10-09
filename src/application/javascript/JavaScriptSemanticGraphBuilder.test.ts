@@ -845,10 +845,7 @@ it.each([
     "conditional mutation",
     'alias = { mode: "other" }; if (flag) alias.mode = "updated";',
   ],
-  [
-    "short-circuit mutation",
-    'alias = { mode: "other" }; flag && (alias.mode = "updated");',
-  ],
+  ["short-circuit mutation", 'flag && (alias.mode = "updated");'],
 ])(
   "preserves possible alias mutation uncertainty in queries: %s",
   (_label, body) => {
@@ -876,6 +873,36 @@ it.each([
     expect(result.coverage.status).toBe("partial");
   },
 );
+
+it("preserves the original property provenance after an unconditional alias rebind", () => {
+  const graph = graphFor(`
+    const shared = { mode: "initial" };
+    let alias = shared;
+    alias = { mode: "other" };
+    flag && (alias.mode = "updated");
+  `);
+  const sharedMode = graph.nodes.find(
+    ({ kind, identity, properties }) =>
+      kind === "property-slot" &&
+      properties.property_pointer === "/mode" &&
+      identity.role_key.includes("binding:shared"),
+  );
+  if (sharedMode === undefined) throw new Error("Expected shared mode slot");
+  expect(sharedMode.properties).toMatchObject({
+    presence: "present",
+    value_status: "literal",
+  });
+  const result = queryJavaScriptSemanticGraph(graph, {
+    seed: { kind: "semantic-node", node_id: sharedMode.node_id },
+    direction: "backward-provenance",
+  });
+  expect(result.nodes).toContainEqual(
+    expect.objectContaining({
+      kind: "literal",
+      properties: { value: "initial" },
+    }),
+  );
+});
 
 it.each(["{}", "unknownRoot", "{ a: null }"])(
   "preserves the requested deep leaf name after a blocked prefix: %s",
