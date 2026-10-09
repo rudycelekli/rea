@@ -134,8 +134,6 @@ export const inspectBundleKeyedArchive = async (input: {
       selected.path,
       input.signal,
     );
-    if ((entry.declaredSize ?? 0) > MAX_BYTES)
-      throw new ArtifactReaderFailure("limit", "Keyed archive exceeds 64 MiB");
     const stream = await reader.open(entry, input.signal);
     const chunks: Buffer[] = [];
     let size = 0;
@@ -201,7 +199,9 @@ const selectBundleArchiveEntry = async (
 ): Promise<ArtifactEntry> => {
   const logicalPath = path.normalize("NFC");
   let selected: ArtifactEntry | undefined;
-  for await (const entry of reader.entries(signal)) {
+  for await (const entry of reader.entries(signal, (directory) =>
+    logicalPath.startsWith(`${directory.normalize("NFC")}/`),
+  )) {
     // Keep the original entry for I/O and source evidence.
     if (entry.path.normalize("NFC") !== logicalPath) continue;
     if (selected !== undefined)
@@ -214,6 +214,8 @@ const selectBundleArchiveEntry = async (
         "invalid_value",
         `Archive path selects a ${entry.kind}, not a regular file: ${path}`,
       );
+    if ((entry.declaredSize ?? 0) > MAX_BYTES)
+      throw new ArtifactReaderFailure("limit", "Keyed archive exceeds 64 MiB");
     selected = entry;
   }
   if (selected === undefined)

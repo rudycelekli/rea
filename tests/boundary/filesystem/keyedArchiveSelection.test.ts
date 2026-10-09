@@ -1,4 +1,12 @@
-import { chmod, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import {
+  chmod,
+  mkdir,
+  readFile,
+  readdir,
+  truncate,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 
 import { build } from "plist";
@@ -140,6 +148,57 @@ it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
       });
     } finally {
       await chmod(selected, 0o700);
+    }
+  },
+);
+
+it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+  "inspects an active standalone archive without opening unrelated directories",
+  async () => {
+    const root = await createTestTempDirectory("rea-keyed-standalone-scope-");
+    const path = join(root, "Model.plist");
+    const bytes = Buffer.from(archive);
+    await writeFile(path, bytes);
+    const blocked = join(root, "unrelated");
+    await mkdir(blocked);
+    await chmod(blocked, 0);
+    try {
+      await expect(readdir(blocked)).rejects.toMatchObject({ code: "EACCES" });
+      const result = await new ArtifactProvider(process.env, "darwin")
+        .createClient({
+          path,
+          sha256: createHash("sha256").update(bytes).digest("hex"),
+          kind: "artifact",
+          format: "plist",
+        })
+        .execute("inspect_keyed_archive", {});
+      expect(result.ok).toBe(true);
+    } finally {
+      await chmod(blocked, 0o700);
+    }
+  },
+);
+
+it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+  "reports the selected oversized archive limit despite an unreadable sibling",
+  async () => {
+    const root = await createTestTempDirectory("rea-keyed-size-scope-");
+    const path = join(root, "Large.plist");
+    await writeFile(path, archive);
+    await truncate(path, 64 * 1024 * 1024 + 1);
+    const blocked = join(root, "unrelated");
+    await mkdir(blocked);
+    await chmod(blocked, 0);
+    try {
+      await expect(readdir(blocked)).rejects.toMatchObject({ code: "EACCES" });
+      await expect(
+        inspect(root, { path: "Large.plist" }),
+      ).rejects.toMatchObject({
+        reason: "limit",
+        message: "Keyed archive exceeds 64 MiB",
+      });
+    } finally {
+      await chmod(blocked, 0o700);
     }
   },
 );
