@@ -7,9 +7,15 @@ import type { FunctionComparisonResult } from "./functionComparisonSchemas.js";
 export const identityProjection = (snapshot: FunctionSnapshot) => ({
   name: snapshot.dossier.procedure.name,
   signature: snapshot.dossier.procedure.signature,
-  locals: snapshot.dossier.procedure.locals
-    .map(({ description }) => description)
-    .sort(),
+  locals: sorted(
+    snapshot.dossier.procedure.locals.map(
+      ({ description, name, stack_displacement }) => ({
+        description,
+        ...(name === undefined ? {} : { name }),
+        ...(stack_displacement === undefined ? {} : { stack_displacement }),
+      }),
+    ),
+  ),
 });
 
 export const functionMatch = (

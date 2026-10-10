@@ -625,3 +625,31 @@ const expectFunctionDimensionAlgebra = (
     }).success,
   ).toBe(false);
 };
+
+it("compares observed local names and stack locations even when display text agrees", () => {
+  const localDossier = (name: string, displacement: string) =>
+    functionDossierSchema.parse({
+      ...dossier("return 0;", "0x1000"),
+      procedure: {
+        ...dossier("return 0;", "0x1000").procedure,
+        locals: [
+          {
+            description: "int value",
+            provenance: "native-locals",
+            name,
+            stack_displacement: displacement,
+          },
+        ],
+      },
+    });
+  const before = observe("b", localDossier("value", "-8"));
+  for (const after of [
+    localDossier("renamed", "-8"),
+    localDossier("value", "-16"),
+  ]) {
+    const compared = compareFunctions(before, observe("c", after));
+    expect(
+      compared.dimensions.find(({ dimension }) => dimension === "identity"),
+    ).toMatchObject({ status: "changed" });
+  }
+});
