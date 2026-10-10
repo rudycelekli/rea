@@ -61,13 +61,7 @@ export class ProviderStartupDeadline {
       return;
     }
     signal?.addEventListener("abort", this.#onExternalAbort, { once: true });
-    this.#timer = setTimeout(() => {
-      if (this.#controller.signal.aborted) return;
-      this.#interruption = "timeout";
-      this.#abort(
-        new DOMException("Provider startup deadline elapsed", "TimeoutError"),
-      );
-    }, timeoutMs);
+    this.#scheduleTimeout();
   }
 
   /** Composite signal aborted by either the caller or the absolute deadline. */
@@ -100,6 +94,23 @@ export class ProviderStartupDeadline {
   dispose(): void {
     this.#clearTimer();
     this.#externalSignal?.removeEventListener("abort", this.#onExternalAbort);
+  }
+
+  #scheduleTimeout(): void {
+    this.#timer = setTimeout(
+      () => {
+        if (this.#controller.signal.aborted) return;
+        if (this.remainingMs() > 0) {
+          this.#scheduleTimeout();
+          return;
+        }
+        this.#interruption = "timeout";
+        this.#abort(
+          new DOMException("Provider startup deadline elapsed", "TimeoutError"),
+        );
+      },
+      Math.min(this.remainingMs(), 2_147_483_647),
+    );
   }
 
   #abort(reason: unknown): void {
