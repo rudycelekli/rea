@@ -36,33 +36,109 @@ concurrency:
   group: javascript-recovery-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+
 env:
   HUSKY: "0"
-  NODE_OPTIONS: "--max-old-space-size=768"
+  NODE_OPTIONS: "--max-old-space-size=2048"
   RAYON_NUM_THREADS: "1"
+  APP_SHA: "8de54e086308a2386a0fd0b898d7e2764e36ca4c"
+  BASE_SHA: "4999e4be2c1669d04417fcdea582052048adbb2d"
+  SOURCE_PATH: "src/domain/referenceSourceImportParsing.ts"
+  REGRESSION_PATH: "tests/boundary/filesystem/referenceSourceShadowedRequire.test.ts"
 
 jobs:
-  real-javascript-recovery:
+  reference-shadowed-require-validation:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: 8de54e086308a2386a0fd0b898d7e2764e36ca4c
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Prove application and validation identity
+        env:
+          CI_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          export VERIFICATION_DIR="$RUNNER_TEMP/rea-shadowed-verification"
+          mkdir -p "$VERIFICATION_DIR"
+          printf 'VERIFICATION_DIR=%s\n' "$VERIFICATION_DIR" >> "$GITHUB_ENV"
+          test "$(git rev-parse HEAD)" = "$APP_SHA"
+          git cat-file -e "$CI_SHA^{commit}"
+          git diff --exit-code "$APP_SHA" "$CI_SHA" -- . ':(exclude).github/workflows/real-javascript-recovery.yml'
+          printf 'application=%s\nvalidation=%s\nbase=%s\ntree=%s\n' "$APP_SHA" "$CI_SHA" "$BASE_SHA" "$(git rev-parse HEAD^{tree})" > "$VERIFICATION_DIR/identity.txt"
+          sha256sum "$SOURCE_PATH" "$REGRESSION_PATH" package-lock.json > "$VERIFICATION_DIR/application-files.sha256"
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version-file: .nvmrc
           cache: npm
-      - run: npm ci
-      - name: Fetch pinned Wakaru release into the job workspace
-        shell: bash
+      - name: Install pinned npm and locked dependencies
         run: |
-          mkdir -p "$RUNNER_TEMP/rea-wakaru"
-          curl --fail --location --retry 3 https://github.com/pionxzh/wakaru/releases/download/v1.14.0/wakaru-linux-x64.tar.gz -o "$RUNNER_TEMP/rea-wakaru/release.tar.gz"
-          tar -xzf "$RUNNER_TEMP/rea-wakaru/release.tar.gz" -C "$RUNNER_TEMP/rea-wakaru" wakaru
-          printf '%s  %s\n' 664fa06782a61eda7ed15885134b52525fd565dd77607e642062ceb6cd927c38 "$RUNNER_TEMP/rea-wakaru/wakaru" | sha256sum --check
-      - name: Install isolated fixture compilers
-        run: npm install --prefix "$RUNNER_TEMP/rea-fixture-compilers" --ignore-scripts --no-audit --no-fund esbuild@0.25.10 webpack@5.101.3
-      - run: npm run build:cached
-      - run: npm run verify:javascript:recovery
-        env:
-          REA_WAKARU_COMMAND: ${{ runner.temp }}/rea-wakaru/wakaru
-          REA_JAVASCRIPT_FIXTURE_TOOLS: ${{ runner.temp }}/rea-fixture-compilers
+          npm install --global npm@11.16.0
+          node --version | tee "$VERIFICATION_DIR/node-version.txt"
+          npm --version | tee "$VERIFICATION_DIR/npm-version.txt"
+          npm ci 2>&1 | tee "$VERIFICATION_DIR/npm-ci.log"
+      - name: Verify test discovery
+        run: npm run verify:test-discovery 2>&1 | tee "$VERIFICATION_DIR/test-discovery.log"
+      - name: Require official baseline regression failure
+        run: |
+          set -euo pipefail
+          trap 'git show "$APP_SHA:$SOURCE_PATH" > "$SOURCE_PATH"' EXIT
+          git show "$BASE_SHA:$SOURCE_PATH" > "$SOURCE_PATH"
+          sha256sum "$SOURCE_PATH" > "$VERIFICATION_DIR/baseline-source.sha256"
+          set +e
+          npm run test:focused -- "$REGRESSION_PATH" > "$VERIFICATION_DIR/baseline-official.log" 2>&1
+          status=$?
+          set -e
+          cat "$VERIFICATION_DIR/baseline-official.log"
+          test "$status" = 1
+          set +e
+          node node_modules/vitest/vitest.mjs run "$REGRESSION_PATH" --reporter=json --outputFile="$VERIFICATION_DIR/baseline.json" > "$VERIFICATION_DIR/baseline-json.log" 2>&1
+          status=$?
+          set -e
+          test "$status" = 1
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const report = JSON.parse(fs.readFileSync(`${process.env.VERIFICATION_DIR}/baseline.json`, 'utf8'));
+          const assertions = report.testResults?.flatMap(result => result.assertionResults ?? []) ?? [];
+          const assertion = assertions[0];
+          const messages = assertion?.failureMessages?.join('\n') ?? '';
+          if (report.numTotalTests !== 1 || report.numFailedTests !== 1 || assertions.length !== 1 ||
+              assertion.status !== 'failed' || assertion.title !== 'does not infer CommonJS dependencies from locally bound or dynamic require lookups' ||
+              !messages.includes('AssertionError') || !messages.includes('to deeply equal') ||
+              !messages.includes('throwing.cjs') || !messages.includes('requires')) {
+            throw new Error('Baseline was not the intended relationship assertion failure');
+          }
+          fs.writeFileSync(`${process.env.VERIFICATION_DIR}/baseline-classified.txt`, 'Exactly the intended shadowed-require relationship assertion failed.\n');
+          NODE
+      - name: Restore and verify exact application source
+        if: ${{ always() }}
+        run: |
+          git show "$APP_SHA:$SOURCE_PATH" > "$SOURCE_PATH"
+          sha256sum --check "$VERIFICATION_DIR/application-files.sha256"
+          git diff --exit-code "$APP_SHA" -- "$SOURCE_PATH" "$REGRESSION_PATH"
+      - name: Fixed official focused boundary regressions
+        run: |
+          npm run test:focused -- tests/boundary/filesystem/referenceSourceShadowedRequire.test.ts tests/boundary/filesystem/referenceSourceImport.test.ts tests/boundary/filesystem/referenceSourceComputedRequire.test.ts tests/boundary/filesystem/referenceSourceDynamicImports.test.ts 2>&1 | tee "$VERIFICATION_DIR/fixed-focused.log"
+      - name: Required static checks
+        run: npm run check 2>&1 | tee "$VERIFICATION_DIR/npm-check.log"
+      - name: Required cached runtime build
+        run: npm run build:cached 2>&1 | tee "$VERIFICATION_DIR/build-cached.log"
+      - name: Final application identity
+        run: |
+          test "$(git rev-parse HEAD)" = "$APP_SHA"
+          sha256sum --check "$VERIFICATION_DIR/application-files.sha256"
+          test ! -e verification
+          git diff --exit-code "$APP_SHA" -- "$SOURCE_PATH" "$REGRESSION_PATH"
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: reference-shadowed-require-verification
+          path: ${{ runner.temp }}/rea-shadowed-verification
+          if-no-files-found: error
+          retention-days: 7
