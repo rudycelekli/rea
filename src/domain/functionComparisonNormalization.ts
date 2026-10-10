@@ -102,7 +102,18 @@ export const referenceKindProjection = (
       edge,
     })),
   ];
-  if (edges.some(({ edge }) => !edge.kind.available)) return null;
+  if (
+    edges.some(({ edge }) => edge.call !== undefined) &&
+    edges.some(({ edge }) => edge.call === undefined)
+  )
+    return null;
+  if (
+    edges.some(
+      ({ edge }) =>
+        !edge.kind.available || edge.call?.classification === "unknown",
+    )
+  )
+    return null;
   return sorted(
     edges.map(({ direction, edge }) => {
       if (!edge.kind.available)
@@ -127,6 +138,9 @@ export const referenceKindProjection = (
         primary: edge.kind.primary,
         operand_index: edge.kind.operand_index,
         external: edge.kind.external,
+        ...(edge.call === undefined
+          ? {}
+          : { call_classification: edge.call.classification }),
       };
     }),
   );

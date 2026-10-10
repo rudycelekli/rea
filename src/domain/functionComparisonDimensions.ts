@@ -185,6 +185,19 @@ const compareReferences = (
         "Reference endpoints differ independently of provider reference-kind metadata.",
       ],
     });
+  const hasCallDetails = (snapshot: FunctionSnapshot) =>
+    [
+      ...snapshot.dossier.incoming_references,
+      ...snapshot.dossier.outgoing_references,
+    ].some((edge) => edge.call !== undefined);
+  if (hasCallDetails(left) !== hasCallDetails(right))
+    return unresolvedDimension({
+      dimension: "references",
+      links: context.links,
+      leftCount: leftProjection.length,
+      rightCount: rightProjection.length,
+      limitations: ["Call classification was not observed on both sides."],
+    });
   const leftKinds = referenceKindProjection(left);
   const rightKinds = referenceKindProjection(right);
   if (leftKinds !== null && rightKinds !== null)

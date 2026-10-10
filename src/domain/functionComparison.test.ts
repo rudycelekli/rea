@@ -625,3 +625,46 @@ const expectFunctionDimensionAlgebra = (
     }).success,
   ).toBe(false);
 };
+
+it("retains observed call classification when comparing reference semantics", () => {
+  const classified = (classification: "direct" | "objective_c") => {
+    const value = dossierWithReference("0x1000", "call");
+    return functionDossierSchema.parse({
+      ...value,
+      outgoing_references: value.outgoing_references.map((edge) => ({
+        ...edge,
+        call: {
+          classification,
+          provider_type: classification === "direct" ? 1 : 2,
+          provenance: "native-reference",
+        },
+      })),
+    });
+  };
+  const result = compareFunctions(
+    observe("b", classified("direct")),
+    observe("c", classified("objective_c")),
+  );
+  expect(
+    result.dimensions.find(({ dimension }) => dimension === "references"),
+  ).toMatchObject({ status: "changed" });
+});
+
+it("does not treat omitted call classification as an observed semantic difference", () => {
+  const before = dossierWithReference("0x1000", "call");
+  const after = functionDossierSchema.parse({
+    ...before,
+    outgoing_references: before.outgoing_references.map((edge) => ({
+      ...edge,
+      call: {
+        classification: "direct",
+        provider_type: 1,
+        provenance: "native-reference",
+      },
+    })),
+  });
+  const result = compareFunctions(observe("b", before), observe("c", after));
+  expect(
+    result.dimensions.find(({ dimension }) => dimension === "references"),
+  ).toMatchObject({ status: "unknown" });
+});
