@@ -1,14 +1,16 @@
 import { parse } from "@babel/parser";
 import type {
   CallExpression,
-  File,
   ImportExpression,
   Node,
   StringLiteral,
 } from "@babel/types";
 import { traverseJavaScriptAst } from "./javascript/javascriptSemanticTraversal.js";
 import { analyzeParsedJavaScriptReferences } from "./javascript/javascriptSemanticAnalysis.js";
-import { parserPluginsForPath } from "./javascript/javascriptSourceParser.js";
+import {
+  parserPluginsForPath,
+  type ParsedJavaScriptSource,
+} from "./javascript/javascriptSourceParser.js";
 import {
   isCallExpression,
   isExportAllDeclaration,
@@ -221,7 +223,7 @@ const isRequireCallee = (
 };
 
 const extractRequireAndDynamicImports = (
-  ast: File,
+  ast: ParsedJavaScriptSource,
   from_path: string,
   relationships: ReferenceSourceImportRelationship[],
 ): void => {
@@ -296,7 +298,7 @@ const parseWithBabel = (
   source: string,
   language: string | null,
 ): {
-  ast: File | undefined;
+  ast: ParsedJavaScriptSource | undefined;
   reasons: readonly string[];
 } => {
   // Single parser-mode owner: path-driven plugins (dts/JSX/mts) shared with
