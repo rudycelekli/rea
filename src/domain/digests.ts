@@ -13,7 +13,7 @@ import { z } from "zod";
  */
 
 /** Lowercase hex SHA-256, as every digest in the system is emitted. */
-export const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
+export const SHA256_PATTERN = /^[a-f0-9]{64}(?![\s\S])/u;
 
 /** A bare artifact/content digest. */
 export const digestSchema = z.string().regex(SHA256_PATTERN);
@@ -28,7 +28,7 @@ export const prefixedDigestSchema = (prefix: string): z.ZodString =>
   z
     .string()
     .regex(
-      new RegExp(`^${prefix}_[a-f0-9]{64}$`, "u"),
+      new RegExp(`^${prefix}_[a-f0-9]{64}(?![\\s\\S])`, "u"),
       `Expected a ${prefix}_ prefixed lowercase sha256 digest`,
     );
 
