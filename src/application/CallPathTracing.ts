@@ -1,9 +1,10 @@
 import type { AnalysisOperation } from "./AnalysisProvider.js";
+import { AnalysisCancelledError } from "../domain/analysisErrorCore.js";
 import { projectAnalysisError } from "../domain/analysisErrorProjection.js";
 import { type AnalysisError } from "../domain/analysisErrorBase.js";
 import { parseRelatedAddresses } from "../domain/hopperValues.js";
 import type { JsonValue } from "../domain/jsonValue.js";
-import { ok, type Result } from "../domain/result.js";
+import { err, ok, type Result } from "../domain/result.js";
 import type { EnhancedResult } from "./EnhancedToolTypes.js";
 import { resolveProcedureAddress } from "./ProcedureAddressResolution.js";
 
@@ -91,7 +92,8 @@ export const traceCallPath = async (
       current,
       ...(signal === undefined ? {} : { signal }),
     });
-    if (found) break;
+    if (!found.ok) return found;
+    if (found.value) break;
   }
   return ok(projectTrace(resolvedInput, state));
 };
@@ -109,19 +111,21 @@ const createTraceState = (input: CallPathTraceInput): TraceState => ({
 const expandAddress = async (
   call: AnalysisCall,
   expansion: AddressExpansion,
-): Promise<boolean> => {
+): Promise<Result<boolean, AnalysisError>> => {
   const { input, state, address, current, signal } = expansion;
   const relation = input.direction === "forward" ? "callees" : "callers";
   const tool =
     input.direction === "forward" ? "procedure_callees" : "procedure_callers";
   const result = await call(tool, { procedure: address }, signal);
   if (!result.ok) {
+    if (result.error instanceof AnalysisCancelledError)
+      return err(result.error);
     state.failures.push({
       address,
       error: projectAnalysisError(result.error),
     });
     state.residual.add(`Call relationships were unavailable for ${address}.`);
-    return false;
+    return ok(false);
   }
   const related = parseRelatedAddresses(result.value, relation);
   if (!related.ok) {
@@ -130,7 +134,7 @@ const expandAddress = async (
       error: projectAnalysisError(related.error),
     });
     state.residual.add(`Call relationships were unreadable for ${address}.`);
-    return false;
+    return ok(false);
   }
   for (const relatedAddress of sortedUniqueAddresses(related.value)) {
     recordEdge(input, state, {
@@ -145,7 +149,7 @@ const expandAddress = async (
     if (state.visited.has(relatedAddress)) {
       if (relatedAddress === input.goal) {
         state.traversalPath = path;
-        return true;
+        return ok(true);
       }
       continue;
     }
@@ -155,11 +159,11 @@ const expandAddress = async (
     });
     if (relatedAddress === input.goal) {
       state.traversalPath = path;
-      return true;
+      return ok(true);
     }
     state.queue.push(relatedAddress);
   }
-  return false;
+  return ok(false);
 };
 
 const recordEdge = (
