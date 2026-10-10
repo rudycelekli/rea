@@ -510,3 +510,37 @@ describe("managed exception section decoding", () => {
     });
   });
 });
+
+it.each([
+  ["outside the method", [0x2b, 0x7f, 0x2a]],
+  ["inside an operand", [0x2b, 0x01, 0x20, 0, 0, 0, 0, 0x2a]],
+  ["inside a prefix chain", [0x2b, 0x02, 0xfe, 0x13, 0x4a, 0x2a]],
+  [
+    "a switch target outside the method",
+    [0x45, 1, 0, 0, 0, 0x7f, 0, 0, 0, 0x2a],
+  ],
+] as const)("marks a CIL branch %s malformed", (_name, il) => {
+  const bytes = buildManagedPeFixture({
+    ilBody: Buffer.from([(il.length << 2) | 2, ...il]),
+  });
+  const result = inspectManagedMembersBytes(
+    bytes,
+    managedPeFixtureTarget(bytes),
+  );
+  expect(result.methods[0]?.body).toMatchObject({
+    status: "malformed",
+    normalized_il_sha256: null,
+    issue: expect.stringContaining("target"),
+  });
+});
+
+it("retains a valid backward CIL branch", () => {
+  const bytes = buildManagedPeFixture({
+    ilBody: Buffer.from([0x0e, 0x00, 0x2b, 0xfd]),
+  });
+  const result = inspectManagedMembersBytes(
+    bytes,
+    managedPeFixtureTarget(bytes),
+  );
+  expect(result.methods[0]?.body.status).toBe("present");
+});

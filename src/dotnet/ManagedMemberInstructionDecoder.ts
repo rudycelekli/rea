@@ -426,6 +426,32 @@ export const decodeInstructions = (
     issue =
       cause instanceof Error ? cause.message : "Instruction decode failed";
   }
+  if (issue === null) {
+    const boundaries = new Set(instructionStarts);
+    for (const instruction of parsed) {
+      const invalidTarget = (target: number): boolean =>
+        !boundaries.has(target);
+      if (
+        instruction.operandKind === "branch" &&
+        invalidTarget(Number(instruction.operand))
+      ) {
+        issue = `CIL branch target at IL offset ${String(instruction.offset)} is not an instruction boundary`;
+        break;
+      }
+      if (instruction.operandKind === "switch") {
+        const count = Number(instruction.operand);
+        const table = instruction.offset + 5;
+        const base = table + count * 4;
+        for (let index = 0; index < count; index++) {
+          if (invalidTarget(base + il.readInt32LE(table + index * 4))) {
+            issue = `CIL switch target at IL offset ${String(instruction.offset)} is not an instruction boundary`;
+            break;
+          }
+        }
+        if (issue !== null) break;
+      }
+    }
+  }
   const truncated = offset < il.length && issue === null ? 1 : 0;
   return { parsed, instructionStarts, count: parsed.length, truncated, issue };
 };
