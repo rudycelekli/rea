@@ -510,3 +510,18 @@ describe("managed exception section decoding", () => {
     });
   });
 });
+
+it("marks a method ending in a CIL prefix as malformed", () => {
+  const bytes = buildManagedPeFixture({
+    ilBody: Buffer.from([0x0a, 0xfe, 0x13]),
+  });
+  const result = inspectManagedMembersBytes(
+    bytes,
+    managedPeFixtureTarget(bytes),
+  );
+  expect(result.methods[0]?.body).toMatchObject({
+    status: "malformed",
+    normalized_il_sha256: null,
+    issue: expect.stringContaining("prefix"),
+  });
+});
