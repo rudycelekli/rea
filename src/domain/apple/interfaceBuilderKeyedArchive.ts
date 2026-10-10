@@ -466,12 +466,6 @@ const classifyObject = (
     value === "uiproxyobject"
   )
     return "placeholder";
-  if (
-    value.includes("image") ||
-    value.includes("color") ||
-    value.includes("font")
-  )
-    return "resource";
   if (value.includes("external")) return "external_object";
   if (value.includes("viewcontroller") || value.includes("windowcontroller"))
     return "view_controller";
@@ -489,6 +483,12 @@ const classifyObject = (
     value.includes("cell")
   )
     return "view";
+  if (
+    value.includes("image") ||
+    value.includes("color") ||
+    value.includes("font")
+  )
+    return "resource";
   return "other";
 };
 
