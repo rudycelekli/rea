@@ -7,6 +7,7 @@ import type {
   StringLiteral,
 } from "@babel/types";
 import { traverseJavaScriptAst } from "./javascript/javascriptSemanticTraversal.js";
+import { analyzeParsedJavaScriptReferences } from "./javascript/javascriptSemanticAnalysis.js";
 import { parserPluginsForPath } from "./javascript/javascriptSourceParser.js";
 import {
   isCallExpression,
@@ -183,8 +184,25 @@ const extractImportDeclarations = (
   }
 };
 
-const isRequireCallee = (callee: Node | null | undefined): boolean => {
-  if (isIdentifier(callee) && callee.name === "require") return true;
+const isRequireCallee = (
+  callee: Node | null | undefined,
+  unboundRequireLocations: ReadonlySet<string>,
+): boolean => {
+  const identifier = isIdentifier(callee)
+    ? callee
+    : isMemberExpression(callee) && isIdentifier(callee.object)
+      ? callee.object
+      : undefined;
+  if (
+    identifier?.name !== "require" ||
+    identifier.loc === null ||
+    identifier.loc === undefined ||
+    !unboundRequireLocations.has(
+      `${String(identifier.loc.start.line)}:${String(identifier.loc.start.column)}`,
+    )
+  )
+    return false;
+  if (isIdentifier(callee)) return true;
   if (
     isMemberExpression(callee) &&
     isIdentifier(callee.object) &&
@@ -203,15 +221,26 @@ const isRequireCallee = (callee: Node | null | undefined): boolean => {
 };
 
 const extractRequireAndDynamicImports = (
-  body: readonly Node[],
+  ast: File,
   from_path: string,
   relationships: ReferenceSourceImportRelationship[],
 ): void => {
+  // Reuse the lexical-reference owner: a literal spelling is a CommonJS
+  // dependency only when the callee is an unbound global, not a local binding
+  // or an uncertain lookup through a dynamic scope.
+  const unboundRequireLocations = new Set(
+    analyzeParsedJavaScriptReferences(ast, "require")
+      .filter((reference) => reference.resolution === "unbound")
+      .map(
+        ({ location }) =>
+          `${String(location.start.line)}:${String(location.start.column)}`,
+      ),
+  );
   // Single traversal owner: iterative, VISITOR_KEYS-gated, no recursion over
   // loc/comment objects. Survives deeply nested generated member chains that
   // overflowed the previous hand-rolled Object.values walker.
   const expressions: Array<CallExpression | ImportExpression> = [];
-  for (const statement of body)
+  for (const statement of ast.program.body)
     traverseJavaScriptAst(statement, {
       enter: (node) => {
         if (isCallExpression(node) || isImportExpression(node))
@@ -232,7 +261,10 @@ const extractRequireAndDynamicImports = (
       continue;
     }
     const first = call.arguments[0];
-    if (isRequireCallee(call.callee) && isModuleExpression(first)) {
+    if (
+      isRequireCallee(call.callee, unboundRequireLocations) &&
+      isModuleExpression(first)
+    ) {
       const result = moduleSpecifierFromExpression(first);
       if (result !== undefined) {
         appendRelationship(relationships, {
@@ -332,7 +364,7 @@ export const parseReferenceSourceImports = (
 
   const relationships: ReferenceSourceImportRelationship[] = [];
   extractImportDeclarations(ast.program.body, path, relationships);
-  extractRequireAndDynamicImports(ast.program.body, path, relationships);
+  extractRequireAndDynamicImports(ast, path, relationships);
 
   return {
     relationships: relationships.map((relationship) => ({
