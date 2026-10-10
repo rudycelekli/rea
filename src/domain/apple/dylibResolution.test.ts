@@ -1232,3 +1232,20 @@ it.each([
     }
   },
 );
+
+it.each(["/", "/."])(
+  "does not resolve a dylib file with directory suffix %s",
+  async (suffix) => {
+    const trace = await traceDylibLoading(
+      memoryView({
+        [MAIN]: executable({
+          dependencies: [dependency(`@loader_path/lib.dylib${suffix}`)],
+        }),
+        "Contents/MacOS/lib.dylib": parsed(slice()),
+      }),
+      { roots: [MAIN] },
+    );
+    expect(trace.edges[0]?.resolution.status).toBe("unresolved");
+    expect(trace.edges[0]?.candidates[0]?.outcome).toBe("absent");
+  },
+);
