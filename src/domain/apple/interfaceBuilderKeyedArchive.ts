@@ -61,11 +61,13 @@ export const parseInterfaceBuilderRecords = (
   for (const [id, raw] of objectEntries.slice(0, 20_000)) {
     const attributes = record(raw);
     const className = firstString(
+      attributes["custom-class"],
       attributes["customClass"],
       attributes["class"],
       attributes["isa"],
     );
     const label = firstString(
+      attributes["ibExternalExplicitLabel"],
       attributes["label"],
       attributes["title"],
       attributes["name"],
@@ -74,6 +76,9 @@ export const parseInterfaceBuilderRecords = (
     // class_name, name, and id already carry these values; repeating them in
     // attributes doubled them on every graph node.
     const carried = new Set<string>();
+    if (attributes["custom-class"] === className) carried.add("custom-class");
+    if (attributes["ibExternalExplicitLabel"] === label)
+      carried.add("ibExternalExplicitLabel");
     if (attributes["customClass"] === className) carried.add("customClass");
     if (attributes["label"] === label) carried.add("label");
     if (attributes["objectID"] === id) carried.add("objectID");
