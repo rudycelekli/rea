@@ -108,8 +108,14 @@ const restoreSkillFiles = async (
   changed: readonly CanonicalSkillFile[],
 ): Promise<void> => {
   for (const { destination, original } of [...changed].reverse()) {
-    if (original === undefined) await rm(destination, { force: true });
-    else await writeText(destination, original);
+    try {
+      if (original === undefined) await rm(destination, { force: true });
+      else await writeText(destination, original);
+    } catch (cause: unknown) {
+      // A failed restore must not prevent recovery of independent files.
+      // Existing per-file backups remain available for operator recovery.
+      void cause;
+    }
   }
 };
 
