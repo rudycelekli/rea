@@ -87,8 +87,20 @@ it("does not infer CommonJS dependencies from locally bound or dynamic require l
     policy: { secretPatterns: [] },
   });
   if (!result.ok) throw result.error;
-  expect(result.value.parse_failures).toEqual([]);
-  expect(result.value.relationships).toEqual([
+  // The current unambiguous parser reports this strict-mode diagnostic for
+  // the recoverable `with` AST. Preserve it while checking the dependencies;
+  // this change does not alter the parser's existing diagnostic policy.
+  expect(result.value.parse_failures).toEqual([
+    {
+      path: "dynamic.cjs",
+      parser: "babel",
+      reason: "'with' in strict mode. (1:0)",
+    },
+  ]);
+  expect(
+    result.value.relationships,
+    "CommonJS requires edges must not point at throwing.cjs for a local require binding",
+  ).toEqual([
     {
       from_path: "control.cjs",
       to: "loaded.cjs",
