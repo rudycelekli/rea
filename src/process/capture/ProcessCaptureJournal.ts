@@ -52,7 +52,11 @@ export const scheduleScenarioInteractions = (
   const { scenario, getTerminal, timers, interactions, renderer, started } =
     options;
   for (const [eventIndex, event] of scenario.events.entries()) {
-    const timer = scheduleProcessDelay(event.at_ms, () => {
+    const remaining = Math.max(
+      0,
+      event.at_ms - Math.max(0, Date.now() - started),
+    );
+    const timer = scheduleProcessDelay(remaining, () => {
       options.dispatchedEventIndexes.add(eventIndex);
       const terminal = getTerminal();
       const dispatchedAt = Math.max(0, Date.now() - started);
