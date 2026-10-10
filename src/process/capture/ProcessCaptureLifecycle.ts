@@ -695,6 +695,7 @@ export const awaitTerminalExit = async ({
     });
     const timeout = scheduleProcessInterval(() => {
       onLiveProgress?.();
+      if (reason !== "exited") return;
       if (signal?.aborted === true) {
         reason = "cancelled";
         terminal.kill("SIGKILL");
