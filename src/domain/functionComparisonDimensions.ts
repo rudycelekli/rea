@@ -243,6 +243,20 @@ const compareCalls = (
         "Address-derived callee or caller names cannot be matched safely.",
       ],
     });
+  if (
+    ((left.dossier.unresolved_calls?.length ?? 0) > 0 ||
+      (right.dossier.unresolved_calls?.length ?? 0) > 0) &&
+    canonicalJson(sorted(leftValues)) === canonicalJson(sorted(rightValues))
+  )
+    return unresolvedDimension({
+      dimension: "calls",
+      links: context.links,
+      leftCount: leftValues.length,
+      rightCount: rightValues.length,
+      limitations: [
+        "Unresolved call targets prevent an unchanged call-graph claim.",
+      ],
+    });
   return compareValues(
     "calls",
     sorted(leftValues),

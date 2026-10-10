@@ -625,3 +625,19 @@ const expectFunctionDimensionAlgebra = (
     }).success,
   ).toBe(false);
 };
+
+it("keeps call comparison unknown when either dossier reports unresolved calls", () => {
+  const unresolved = functionDossierSchema.parse({
+    ...dossier("return invoke();", "0x1000"),
+    unresolved_calls: [
+      { address: "0x1000", reason: "Indirect call target was not resolved" },
+    ],
+  });
+  const result = compareFunctions(
+    observe("b", unresolved),
+    observe("c", unresolved),
+  );
+  expect(
+    result.dimensions.find(({ dimension }) => dimension === "calls"),
+  ).toMatchObject({ status: "unknown" });
+});
