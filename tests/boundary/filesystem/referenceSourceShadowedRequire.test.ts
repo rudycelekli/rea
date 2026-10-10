@@ -5,8 +5,8 @@ import { promisify } from "node:util";
 
 import { expect, it } from "vitest";
 
-import { importReferenceSource } from "../../../src/application/ReferenceSourceImport.js";
 import { createTestTempDirectory } from "../../fixtures/temporaryDirectory.js";
+import { importReferenceSource } from "../../support/referenceSourceResourceScope.js";
 
 it("does not infer CommonJS dependencies from locally bound or dynamic require lookups", async () => {
   const root = await createTestTempDirectory("rea-reference-shadowed-require-");
