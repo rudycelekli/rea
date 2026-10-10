@@ -125,7 +125,9 @@ export const parseInterfaceBuilderRecords = (
     objectCount: objectEntries.length,
     omittedObjects: Math.max(0, objectEntries.length - 20_000),
     omittedConnections,
-    omittedHierarchyReferences: 0,
+    omittedHierarchyReferences: Array.isArray(hierarchyRaw)
+      ? Math.max(0, hierarchyRaw.length - 20_000)
+      : 0,
   };
 };
 
