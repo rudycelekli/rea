@@ -170,53 +170,61 @@ export const staticArrayValues = (
 /** Classify whether inert path syntax is a module specifier or file expression. */
 export const staticPathResolutionContext = (
   node: t.Node,
+  pathOwners?: ReadonlyMap<number, boolean>,
 ): JavaScriptStaticPathContext =>
-  isFilesystemPathExpression(node)
+  isFilesystemPathExpression(node, pathOwners)
     ? "filesystem-expression"
     : "module-specifier";
 
 /** Resolve a path composed only from inert literal syntax. */
-export const staticPath = (node: t.Node): string | undefined => {
+export const staticPath = (
+  node: t.Node,
+  pathOwners?: ReadonlyMap<number, boolean>,
+): string | undefined => {
+  if (pathOwners?.get(node.start ?? -1) === false) return undefined;
   if (t.isStringLiteral(node)) return node.value;
   if (t.isTemplateLiteral(node) && node.expressions.length === 0)
     return stringValue(node);
   if (t.isBinaryExpression(node, { operator: "+" })) {
-    const left = staticPath(node.left);
-    const right = staticPath(node.right);
+    const left = staticPath(node.left, pathOwners);
+    const right = staticPath(node.right, pathOwners);
     return left === undefined || right === undefined
       ? undefined
       : `${left}${right}`;
   }
   if (t.isCallExpression(node) || t.isNewExpression(node))
-    return staticCallPath(node);
+    return staticCallPath(node, pathOwners);
   return undefined;
 };
 
 const staticCallPath = (
   node: t.CallExpression | t.NewExpression,
+  pathOwners?: ReadonlyMap<number, boolean>,
 ): string | undefined => {
   const name = calleeName(node.callee);
   if (name === "URL" || name.endsWith(".URL"))
-    return isFileIdentity(argumentNode(node.arguments[1]))
+    return isFileIdentity(argumentNode(node.arguments[1]), pathOwners)
       ? stringValue(node.arguments[0])
       : undefined;
   if (name === "fileURLToPath" || name.endsWith(".fileURLToPath")) {
-    return staticFileUrlPath(argumentNode(node.arguments[0]));
+    return staticFileUrlPath(argumentNode(node.arguments[0]), pathOwners);
   }
   if (
     (name === "dirname" || name.endsWith(".dirname")) &&
-    isFileIdentity(argumentNode(node.arguments[0]))
+    isFileIdentity(argumentNode(node.arguments[0]), pathOwners)
   )
     return "";
   if (name.endsWith(".resolve"))
     return name === "win32.resolve" || name.endsWith(".win32.resolve")
       ? undefined
-      : staticResolvedPath(node);
+      : staticResolvedPath(node, pathOwners);
   if (!name.endsWith(".join") && name !== "join") return undefined;
   const parts: string[] = [];
   for (const argument of node.arguments) {
-    if (isDirectoryIdentity(argumentNode(argument))) continue;
-    const value = t.isNode(argument) ? staticPath(argument) : undefined;
+    if (isDirectoryIdentity(argumentNode(argument), pathOwners)) continue;
+    const value = t.isNode(argument)
+      ? staticPath(argument, pathOwners)
+      : undefined;
     if (value === undefined) return undefined;
     parts.push(value);
   }
@@ -225,16 +233,20 @@ const staticCallPath = (
 
 const staticFileUrlPath = (
   argument: t.Node | undefined,
+  pathOwners?: ReadonlyMap<number, boolean>,
 ): string | undefined => {
   if (argument === undefined) return undefined;
-  return isSourceFileUrl(argument)
-    ? sourceRelativeFileUrlPath(argument)
-    : staticPath(argument);
+  return isSourceFileUrl(argument, pathOwners)
+    ? sourceRelativeFileUrlPath(argument, pathOwners)
+    : staticPath(argument, pathOwners);
 };
 
 /** Project a known source-relative URL through the actual file URL decoder. */
-const sourceRelativeFileUrlPath = (node: t.Node): string | undefined => {
-  if (!isSourceFileUrl(node)) return undefined;
+const sourceRelativeFileUrlPath = (
+  node: t.Node,
+  pathOwners?: ReadonlyMap<number, boolean>,
+): string | undefined => {
+  if (!isSourceFileUrl(node, pathOwners)) return undefined;
   const value = stringValue(node.arguments[0]);
   if (
     value === undefined ||
@@ -270,22 +282,27 @@ const sourceRelativeFileUrlPath = (node: t.Node): string | undefined => {
 
 const isSourceFileUrl = (
   node: t.Node,
+  pathOwners?: ReadonlyMap<number, boolean>,
 ): node is t.CallExpression | t.NewExpression =>
+  pathOwners?.get(node.start ?? -1) !== false &&
   (t.isCallExpression(node) || t.isNewExpression(node)) &&
   (calleeName(node.callee) === "URL" ||
     calleeName(node.callee).endsWith(".URL")) &&
-  isFileIdentity(argumentNode(node.arguments[1]));
+  isFileIdentity(argumentNode(node.arguments[1]), pathOwners);
 
 const staticResolvedPath = (
   node: t.CallExpression | t.NewExpression,
+  pathOwners?: ReadonlyMap<number, boolean>,
 ): string | undefined => {
   const parts: (string | null)[] = [];
   for (const argument of node.arguments) {
-    if (isDirectoryIdentity(argumentNode(argument))) {
+    if (isDirectoryIdentity(argumentNode(argument), pathOwners)) {
       parts.push(null);
       continue;
     }
-    const value = t.isNode(argument) ? staticPath(argument) : undefined;
+    const value = t.isNode(argument)
+      ? staticPath(argument, pathOwners)
+      : undefined;
     // Validate every argument, including those before the last anchor.
     if (value === undefined) return undefined;
     parts.push(value);
@@ -302,46 +319,68 @@ const staticResolvedPath = (
   return path === "/" ? path : path.replace(/\/$/u, "");
 };
 
-const isFilesystemPathExpression = (node: t.Node): boolean => {
+const isFilesystemPathExpression = (
+  node: t.Node,
+  pathOwners?: ReadonlyMap<number, boolean>,
+): boolean => {
+  if (pathOwners?.get(node.start ?? -1) === false) return false;
   if (t.isStringLiteral(node)) return node.value.startsWith("/");
-  if (isFileIdentity(node) || isDirectoryIdentity(node)) return true;
+  if (isFileIdentity(node, pathOwners) || isDirectoryIdentity(node, pathOwners))
+    return true;
   if (t.isBinaryExpression(node, { operator: "+" }))
     return (
-      isFilesystemPathExpression(node.left) ||
-      isFilesystemPathExpression(node.right)
+      isFilesystemPathExpression(node.left, pathOwners) ||
+      isFilesystemPathExpression(node.right, pathOwners)
     );
   if (t.isCallExpression(node) || t.isNewExpression(node)) {
     const name = calleeName(node.callee);
-    if (name.endsWith(".resolve") && staticCallPath(node) !== undefined)
+    if (
+      name.endsWith(".resolve") &&
+      staticCallPath(node, pathOwners) !== undefined
+    )
       return true;
     if (name === "URL" || name.endsWith(".URL"))
-      return isFileIdentity(argumentNode(node.arguments[1]));
+      return isFileIdentity(argumentNode(node.arguments[1]), pathOwners);
     if (name === "fileURLToPath" || name.endsWith(".fileURLToPath"))
       return node.arguments.some((argument) => {
         const value = argumentNode(argument);
-        return value !== undefined && isFilesystemPathExpression(value);
+        return (
+          value !== undefined && isFilesystemPathExpression(value, pathOwners)
+        );
       });
     return node.arguments.some((argument) => {
       const value = argumentNode(argument);
-      return value !== undefined && isFilesystemPathExpression(value);
+      return (
+        value !== undefined && isFilesystemPathExpression(value, pathOwners)
+      );
     });
   }
   return false;
 };
 
-const isDirectoryIdentity = (node: t.Node | undefined): boolean => {
+const isDirectoryIdentity = (
+  node: t.Node | undefined,
+  pathOwners?: ReadonlyMap<number, boolean>,
+): boolean => {
+  if (node !== undefined && pathOwners?.get(node.start ?? -1) === false)
+    return false;
   if (t.isIdentifier(node, { name: "__dirname" })) return true;
   if (!t.isCallExpression(node) && !t.isNewExpression(node)) return false;
   const name = calleeName(node.callee);
   if (name === "URL" || name.endsWith(".URL"))
-    return isFileIdentity(argumentNode(node.arguments[1]));
+    return isFileIdentity(argumentNode(node.arguments[1]), pathOwners);
   return (
     (name === "dirname" || name.endsWith(".dirname")) &&
-    isFileIdentity(argumentNode(node.arguments[0]))
+    isFileIdentity(argumentNode(node.arguments[0]), pathOwners)
   );
 };
 
-const isFileIdentity = (node: t.Node | undefined): boolean => {
+const isFileIdentity = (
+  node: t.Node | undefined,
+  pathOwners?: ReadonlyMap<number, boolean>,
+): boolean => {
+  if (node !== undefined && pathOwners?.get(node.start ?? -1) === false)
+    return false;
   if (t.isIdentifier(node, { name: "__filename" })) return true;
   if (node === undefined) return false;
   if (
@@ -356,7 +395,7 @@ const isFileIdentity = (node: t.Node | undefined): boolean => {
   const name = calleeName(node.callee);
   return (
     (name === "fileURLToPath" || name.endsWith(".fileURLToPath")) &&
-    isFileIdentity(argumentNode(node.arguments[0]))
+    isFileIdentity(argumentNode(node.arguments[0]), pathOwners)
   );
 };
 

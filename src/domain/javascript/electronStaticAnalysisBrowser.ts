@@ -45,7 +45,11 @@ const inspectBrowserWindow = (
   const path = electronCalleePath(node.callee, context);
   if (path?.length !== 1 || path[0] !== "BrowserWindow") return;
   const options = argumentNode(node.arguments[0]);
-  const collected = collectWindowOptions(context.source, options);
+  const collected = collectWindowOptions(
+    context.source,
+    options,
+    context.pathOwners,
+  );
   context.accumulator.unknownFindings += collected.unknown;
   const finding: ElectronBrowserWindowFinding = {
     options_status:
@@ -71,6 +75,7 @@ const inspectBrowserWindow = (
 const collectWindowOptions = (
   source: string,
   options: t.Node | undefined,
+  pathOwners?: ReadonlyMap<number, boolean>,
 ): {
   readonly status: ElectronBrowserWindowFinding["web_preferences_status"];
   readonly preferences: readonly ElectronWebPreference[];
@@ -88,12 +93,13 @@ const collectWindowOptions = (
       preload: { preload_path: null, preload_resolution_context: null },
       unknown: lookup.status === "missing" ? 0 : 1,
     };
-  return collectWebPreferences(source, lookup.property.value);
+  return collectWebPreferences(source, lookup.property.value, pathOwners);
 };
 
 const collectWebPreferences = (
   source: string,
   object: t.ObjectExpression,
+  pathOwners?: ReadonlyMap<number, boolean>,
 ): {
   readonly status: "object-literal";
   readonly preferences: readonly ElectronWebPreference[];
@@ -105,7 +111,7 @@ const collectWebPreferences = (
   const effectivePreload = objectProperty(object, "preload");
   const preloadPath =
     effectivePreload.status === "explicit"
-      ? staticPath(effectivePreload.property.value)
+      ? staticPath(effectivePreload.property.value, pathOwners)
       : undefined;
   const preload: ElectronBrowserWindowPreload =
     effectivePreload.status === "explicit" && preloadPath !== undefined
@@ -113,6 +119,7 @@ const collectWebPreferences = (
           preload_path: preloadPath,
           preload_resolution_context: staticPathResolutionContext(
             effectivePreload.property.value,
+            pathOwners,
           ),
         }
       : { preload_path: null, preload_resolution_context: null };
@@ -142,7 +149,8 @@ const collectWebPreferences = (
       });
       continue;
     }
-    const path = name === "preload" ? staticPath(property.value) : undefined;
+    const path =
+      name === "preload" ? staticPath(property.value, pathOwners) : undefined;
     const value: ElectronStaticValue =
       path === undefined
         ? electronStaticValue(source, property.value)
@@ -216,12 +224,14 @@ const inspectUtilityProcess = (
     return;
   const moduleNode = argumentNode(node.arguments[0]);
   const modulePath =
-    moduleNode === undefined ? undefined : staticPath(moduleNode);
+    moduleNode === undefined
+      ? undefined
+      : staticPath(moduleNode, context.pathOwners);
   const options = argumentNode(node.arguments[2]);
   const serviceNameProperty = objectProperty(options, "serviceName");
   const serviceName =
     serviceNameProperty.status === "explicit"
-      ? staticPath(serviceNameProperty.property.value)
+      ? staticPath(serviceNameProperty.property.value, context.pathOwners)
       : undefined;
   if (serviceNameProperty.status !== "missing" && serviceName === undefined)
     context.accumulator.unknownFindings += 1;

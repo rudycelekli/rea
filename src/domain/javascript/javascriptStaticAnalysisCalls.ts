@@ -221,7 +221,7 @@ export const inspectRoleProperty = (
 ): void => {
   if (semanticStaticPropertyName(node.key, node.computed) !== "preload") return;
   if (context.accumulator.mediaElementPreloads.has(node)) return;
-  const path = staticPath(node.value);
+  const path = staticPath(node.value, context.pathOwners);
   if (path === undefined) return;
   addLocatedFinding(context, {
     collection: context.accumulator.roles,
@@ -230,7 +230,10 @@ export const inspectRoleProperty = (
     value: {
       role: "preload",
       path,
-      resolution_context: staticPathResolutionContext(node.value),
+      resolution_context: staticPathResolutionContext(
+        node.value,
+        context.pathOwners,
+      ),
       mechanism: "property:preload",
       module_key: null,
       location: range(node),

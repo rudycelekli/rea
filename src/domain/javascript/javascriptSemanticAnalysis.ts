@@ -49,7 +49,8 @@ import {
   electronMemberPath,
   ELECTRON_MODULE,
 } from "./javascriptElectronMemberWrites.js";
-import { range } from "./javascriptStaticAnalysisHelpers.js";
+import { calleeName, range } from "./javascriptStaticAnalysisHelpers.js";
+import type { SemanticPropertyPathCoverage } from "./javascriptSemanticPropertyPaths.js";
 import { propertyName } from "./javascriptAstValues.js";
 import { semanticCoverage } from "./javascriptSemanticCoverage.js";
 import { semanticResourceLimitsIn } from "./javascriptSemanticResourceLimits.js";
@@ -330,9 +331,37 @@ export const classifyParsedJavaScriptElectronBindings = (
 export function* classifyParsedJavaScriptElectronBindingsSteps(
   file: ParsedJavaScriptSource,
 ): Generator<void, ReadonlyMap<number, readonly string[]>> {
+  return (yield* classifyParsedJavaScriptStaticBindingsSteps(file))
+    .electronBindings;
+}
+
+/** Classify static path owners with the same lexical scan as Electron exports. */
+export function* classifyParsedJavaScriptStaticBindingsSteps(
+  file: ParsedJavaScriptSource,
+): Generator<
+  void,
+  {
+    readonly electronBindings: ReadonlyMap<number, readonly string[]>;
+    readonly pathOwners: ReadonlyMap<number, boolean>;
+  }
+> {
   const facts = new Map<number, readonly string[]>();
   const state = createState(file.program);
   yield* collectDefinitionsSteps(file.program, state);
+  const pathOwners = new Map<number, boolean>();
+  const pathWrites = yield* collectElectronMemberWritesSteps(
+    file.program,
+    (root) => {
+      const binding = t.isIdentifier(root)
+        ? resolveSemanticBindingState(state, root, root.name)
+        : undefined;
+      const origin = staticPathBindingOrigin(root, binding, state);
+      const module = nativePathModule(origin);
+      return module === undefined
+        ? undefined
+        : [module, ...nativePathExport(origin?.importedPath ?? [])];
+    },
+  );
   const exportsByBinding = new Map<string, readonly string[] | null>();
   const rootExport = (root: t.Node): readonly string[] | undefined => {
     if (t.isIdentifier(root)) {
@@ -357,6 +386,7 @@ export function* classifyParsedJavaScriptElectronBindingsSteps(
   );
   yield* traverseJavaScriptAstSteps(file.program, {
     enter: (node) => {
+      recordStaticPathOwner(node, state, pathOwners, pathWrites);
       if (
         !t.isCallExpression(node) &&
         !t.isOptionalCallExpression(node) &&
@@ -369,8 +399,108 @@ export function* classifyParsedJavaScriptElectronBindingsSteps(
         facts.set(root.start ?? -1, exported);
     },
   });
-  return facts;
+  return { electronBindings: facts, pathOwners };
 }
+
+const recordStaticPathOwner = (
+  node: t.Node,
+  state: JavaScriptSemanticAnalysisState,
+  pathOwners: Map<number, boolean>,
+  mutations: SemanticPropertyPathCoverage,
+): void => {
+  if (
+    t.isIdentifier(node) &&
+    (node.name === "__dirname" || node.name === "__filename")
+  ) {
+    pathOwners.set(
+      node.start ?? -1,
+      resolveSemanticBindingState(state, node, node.name) === undefined &&
+        !semanticResolutionBlocked(state, node, node.name),
+    );
+  }
+  if (!t.isCallExpression(node) && !t.isNewExpression(node)) return;
+  const { root } = electronMemberPath(node.callee);
+  const method = calleeName(node.callee).split(".").at(-1);
+  if (
+    method !== undefined &&
+    ["URL", "fileURLToPath", "join", "resolve", "dirname"].includes(method)
+  ) {
+    const binding = t.isIdentifier(root)
+      ? resolveSemanticBindingState(state, root, root.name)
+      : undefined;
+    const origin = staticPathBindingOrigin(root, binding, state);
+    const members = calleeName(node.callee)
+      .split(".")
+      .slice(t.isIdentifier(root) ? 1 : 0);
+    const exported = [...(origin?.importedPath ?? []), ...members];
+    const nativeExport = nativePathExport(exported);
+    const module = nativePathModule(origin);
+    const mutated =
+      module !== undefined && mutations.covers([module, ...nativeExport]);
+    const native = !mutated && isNativePathMethod(origin, method, exported);
+    const unresolved =
+      binding === undefined &&
+      origin === undefined &&
+      t.isIdentifier(root) &&
+      !semanticResolutionBlocked(state, root, root.name);
+    pathOwners.set(node.start ?? -1, native || unresolved);
+  }
+};
+
+const staticPathBindingOrigin = (
+  root: t.Node,
+  binding: JavaScriptSemanticBindingState | undefined,
+  state: JavaScriptSemanticAnalysisState,
+): JavaScriptModuleOrigin | undefined => {
+  if (binding === undefined) return semanticRequireOrigin(root, state);
+  if (binding.definitions.some(({ kind }) => kind === "assignment"))
+    return undefined;
+  const direct = bindingOrigin(binding, state);
+  if (direct !== undefined) return direct;
+  const [initializer] = binding.initializers;
+  if (
+    initializer === undefined ||
+    binding.initializers.length !== 1 ||
+    state.conditionalInitializers.has(initializer.node) ||
+    (!t.isIdentifier(initializer.node) &&
+      !t.isMemberExpression(initializer.node))
+  )
+    return undefined;
+  const provenance = evaluateSemanticProvenance(binding, state);
+  return provenance.status === "module" && provenance.origins.length === 1
+    ? provenance.origins[0]
+    : undefined;
+};
+
+const nativePathExport = (path: readonly string[]): readonly string[] =>
+  path[0] === "default" ? path.slice(1) : path;
+
+const nativePathModule = (
+  origin: JavaScriptModuleOrigin | undefined,
+): string | undefined => {
+  const module = origin?.specifier.replace(/^node:/u, "");
+  return module === "url" || module === "path" ? module : undefined;
+};
+
+const isNativePathMethod = (
+  origin: JavaScriptModuleOrigin | undefined,
+  method: string,
+  exported: readonly string[],
+): boolean => {
+  if (origin === undefined) return false;
+  const module =
+    method === "URL" || method === "fileURLToPath" ? "url" : "path";
+  if (origin.specifier !== module && origin.specifier !== `node:${module}`)
+    return false;
+  const path = nativePathExport(exported);
+  return (
+    (path.length === 1 && path[0] === method) ||
+    (module === "path" &&
+      path.length === 2 &&
+      path[0] === "posix" &&
+      path[1] === method)
+  );
+};
 
 // Read import and require origins directly; general value evaluation is
 // unnecessary here and costly across large vendor bundles.

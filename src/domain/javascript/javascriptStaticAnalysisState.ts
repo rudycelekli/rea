@@ -68,6 +68,8 @@ export interface JavaScriptFindingContext {
     | "local-indexed-db"
     | "local-cache-storage"
   >;
+  /** Proven native or unbound legacy path helpers by expression offset. */
+  readonly pathOwners?: ReadonlyMap<number, boolean>;
   /** Proven Electron export path segments by root offset. */
   readonly electronBindings?: ReadonlyMap<number, readonly string[]>;
 }
