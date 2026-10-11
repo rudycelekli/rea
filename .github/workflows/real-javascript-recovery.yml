@@ -1,7 +1,8 @@
 name: Real JavaScript recovery
 
 on:
-  workflow_call:
+  push:
+    branches: ["validation/path-helper-ownership-20261010"]
   workflow_dispatch:
 
 permissions:
@@ -11,33 +12,137 @@ concurrency:
   group: javascript-recovery-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+
 env:
   HUSKY: "0"
-  NODE_OPTIONS: "--max-old-space-size=768"
+  NODE_OPTIONS: "--max-old-space-size=2048"
   RAYON_NUM_THREADS: "1"
+  APP_SHA: "e14ebd531a0ed7fa777ea7b70f6947b390bbeb64"
+  BASE_SHA: "f88c99021b88ce67e513025901f57478d8107d0c"
+  REGRESSION_PATH: "tests/boundary/filesystem/javascriptPathHelperOwnership.test.ts"
 
 jobs:
-  real-javascript-recovery:
+  path-helper-ownership-validation:
+    if: github.ref == 'refs/heads/validation/path-helper-ownership-20261010'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 35
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: e14ebd531a0ed7fa777ea7b70f6947b390bbeb64
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Prove application and validation identity
+        env:
+          CI_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          export VERIFICATION_DIR="$RUNNER_TEMP/rea-path-owner-verification"
+          mkdir -p "$VERIFICATION_DIR"
+          printf 'VERIFICATION_DIR=%s\n' "$VERIFICATION_DIR" >> "$GITHUB_ENV"
+          test "$(git rev-parse HEAD)" = "$APP_SHA"
+          git cat-file -e "$CI_SHA^{commit}"
+          git diff --exit-code "$APP_SHA" "$CI_SHA" -- . ':(exclude).github/workflows/real-javascript-recovery.yml'
+          printf 'application=%s\nvalidation=%s\nbase=%s\ntree=%s\n' "$APP_SHA" "$CI_SHA" "$BASE_SHA" "$(git rev-parse HEAD^{tree})" > "$VERIFICATION_DIR/identity.txt"
+          sha256sum "src/domain/javascript/electronStaticAnalysisBrowser.ts" "src/domain/javascript/javascriptSemanticAnalysis.ts" "src/domain/javascript/javascriptStaticAnalysis.ts" "src/domain/javascript/javascriptStaticAnalysisCalls.ts" "src/domain/javascript/javascriptStaticAnalysisHelpers.ts" "src/domain/javascript/javascriptStaticAnalysisState.ts" "tests/boundary/filesystem/javascriptPathHelperOwnership.test.ts" package-lock.json > "$VERIFICATION_DIR/application-files.sha256"
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version-file: .nvmrc
           cache: npm
-      - run: npm ci
-      - name: Fetch pinned Wakaru release into the job workspace
-        shell: bash
+      - name: Install pinned npm and locked dependencies
         run: |
-          mkdir -p "$RUNNER_TEMP/rea-wakaru"
-          curl --fail --location --retry 3 https://github.com/pionxzh/wakaru/releases/download/v1.14.0/wakaru-linux-x64.tar.gz -o "$RUNNER_TEMP/rea-wakaru/release.tar.gz"
-          tar -xzf "$RUNNER_TEMP/rea-wakaru/release.tar.gz" -C "$RUNNER_TEMP/rea-wakaru" wakaru
-          printf '%s  %s\n' 664fa06782a61eda7ed15885134b52525fd565dd77607e642062ceb6cd927c38 "$RUNNER_TEMP/rea-wakaru/wakaru" | sha256sum --check
-      - name: Install isolated fixture compilers
-        run: npm install --prefix "$RUNNER_TEMP/rea-fixture-compilers" --ignore-scripts --no-audit --no-fund esbuild@0.25.10 webpack@5.101.3
-      - run: npm run build:cached
-      - run: npm run verify:javascript:recovery
-        env:
-          REA_WAKARU_COMMAND: ${{ runner.temp }}/rea-wakaru/wakaru
-          REA_JAVASCRIPT_FIXTURE_TOOLS: ${{ runner.temp }}/rea-fixture-compilers
+          npm install --global npm@11.16.0
+          node --version | tee "$VERIFICATION_DIR/node-version.txt"
+          npm --version | tee "$VERIFICATION_DIR/npm-version.txt"
+          npm ci 2>&1 | tee "$VERIFICATION_DIR/npm-ci.log"
+      - name: Verify test discovery
+        run: npm run verify:test-discovery 2>&1 | tee "$VERIFICATION_DIR/test-discovery.log"
+      - name: Require exact original-source assertion failures
+        run: |
+          set -euo pipefail
+          SOURCE_PATHS=("src/domain/javascript/electronStaticAnalysisBrowser.ts" "src/domain/javascript/javascriptSemanticAnalysis.ts" "src/domain/javascript/javascriptStaticAnalysis.ts" "src/domain/javascript/javascriptStaticAnalysisCalls.ts" "src/domain/javascript/javascriptStaticAnalysisHelpers.ts" "src/domain/javascript/javascriptStaticAnalysisState.ts")
+          restore_sources() {
+            for source in "${SOURCE_PATHS[@]}"; do git show "$APP_SHA:$source" > "$source"; done
+          }
+          trap restore_sources EXIT
+          for source in "${SOURCE_PATHS[@]}"; do git show "$BASE_SHA:$source" > "$source"; done
+          sha256sum "${SOURCE_PATHS[@]}" > "$VERIFICATION_DIR/baseline-source.sha256"
+          set +e
+          npm run test:focused -- "$REGRESSION_PATH" > "$VERIFICATION_DIR/baseline-official.log" 2>&1
+          status=$?
+          set -e
+          cat "$VERIFICATION_DIR/baseline-official.log"
+          test "$status" = 1
+          set +e
+          node node_modules/vitest/vitest.mjs run "$REGRESSION_PATH" --reporter=json --outputFile="$VERIFICATION_DIR/baseline.json" > "$VERIFICATION_DIR/baseline-json.log" 2>&1
+          status=$?
+          set -e
+          test "$status" = 1
+          cat > "$VERIFICATION_DIR/baseline-classifier.mjs" <<'NODE'
+          import fs from "node:fs";
+          const expected = new Set(["does not resolve a preload through local URL", "does not resolve a preload through local fileURLToPath", "does not resolve a preload through custom join", "does not resolve a preload through custom resolve", "does not resolve a preload through local dirname", "does not resolve a preload through local directory anchor", "does not resolve a preload through reassigned native binding", "does not resolve a preload through reassigned native member", "does not resolve a preload through nested shadow", "does not resolve a preload through with scope", "does not resolve a preload through native object alias mutation", "does not resolve a preload through mutation through native alias", "does not resolve a preload through canonical module alias mutation", "does not resolve a preload through direct require member mutation"]);
+          export function classify(report) {
+            const assertions = report.testResults?.flatMap(result => result.assertionResults ?? []) ?? [];
+            const failures = assertions.filter(assertion => assertion.status === "failed");
+            if (report.numTotalTests !== 22 || report.numFailedTests !== 14 || report.numPassedTests !== 8 ||
+                report.numPendingTests !== 0 || report.numTodoTests !== 0 || assertions.length !== 22 || failures.length !== 14 ||
+                assertions.some(assertion => !["passed", "failed"].includes(assertion.status)) ||
+                new Set(assertions.map(assertion => assertion.title)).size !== 22 ||
+                failures.some(assertion => !expected.has(assertion.title) ||
+                  assertion.failureMessages?.length !== 1 ||
+                  !assertion.failureMessages[0].startsWith("AssertionError: expected true to be false // Object.is equality\n")) ||
+                [...expected].some(title => !failures.some(assertion => assertion.title === title))) {
+              throw new Error("Baseline did not match the 14 intended path ownership assertion failures and 8 controls");
+            }
+          }
+          const report = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+          classify(report);
+          const negativeControls = [
+            value => { value.numFailedTests = 15; },
+            value => { value.numPendingTests = 1; },
+            value => { value.testResults[0].assertionResults.find(a => a.status === "failed").title = "unrelated failure"; },
+            value => { value.testResults[0].assertionResults.find(a => a.status === "failed").failureMessages = ["TypeError: worker failed"]; },
+            value => { value.testResults[0].assertionResults.pop(); },
+            value => { value.testResults[0].assertionResults.find(a => a.status === "passed").status = "pending"; },
+          ];
+          for (const mutate of negativeControls) {
+            const changed = structuredClone(report);
+            mutate(changed);
+            let rejected = false;
+            try { classify(changed); } catch { rejected = true; }
+            if (!rejected) throw new Error("Baseline evaluator accepted a negative control");
+          }
+          console.log("Exact baseline accepted; six evaluator negative controls rejected.");
+          NODE
+          node "$VERIFICATION_DIR/baseline-classifier.mjs" "$VERIFICATION_DIR/baseline.json" | tee "$VERIFICATION_DIR/baseline-classified.txt"
+      - name: Restore and verify exact application source
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          for source in "src/domain/javascript/electronStaticAnalysisBrowser.ts" "src/domain/javascript/javascriptSemanticAnalysis.ts" "src/domain/javascript/javascriptStaticAnalysis.ts" "src/domain/javascript/javascriptStaticAnalysisCalls.ts" "src/domain/javascript/javascriptStaticAnalysisHelpers.ts" "src/domain/javascript/javascriptStaticAnalysisState.ts"; do git show "$APP_SHA:$source" > "$source"; done
+          test "$(git rev-parse HEAD)" = "$APP_SHA"
+          sha256sum --check "$VERIFICATION_DIR/application-files.sha256"
+          git diff --exit-code "$APP_SHA"
+      - name: Fixed official focused boundary regressions
+        run: |
+          npm run test:focused -- tests/boundary/filesystem/javascriptPathHelperOwnership.test.ts src/application/javascript/JavaScriptFileUrlPaths.test.ts src/domain/javascript/javascriptStaticPathResolution.test.ts src/domain/javascript/javascriptSemanticAnalysisSteps.test.ts src/domain/javascript/javascriptSemanticAnalysis.native_bindings.test.ts src/domain/javascript/electronStaticAnalysisOptions.test.ts src/domain/javascript/electronNativeLoaderPaths.test.ts src/domain/javascript/javascriptStaticAnalysisLocations.test.ts src/domain/javascript/javascriptStaticAnalysisModuleIndex.test.ts 2>&1 | tee "$VERIFICATION_DIR/fixed-focused.log"
+      - name: Required static checks
+        run: npm run check 2>&1 | tee "$VERIFICATION_DIR/npm-check.log"
+      - name: Required cached runtime build
+        run: npm run build:cached 2>&1 | tee "$VERIFICATION_DIR/build-cached.log"
+      - name: Final application identity
+        run: |
+          test "$(git rev-parse HEAD)" = "$APP_SHA"
+          sha256sum --check "$VERIFICATION_DIR/application-files.sha256"
+          test ! -e verification
+          git diff --exit-code "$APP_SHA"
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: path-helper-ownership-verification
+          path: ${{ runner.temp }}/rea-path-owner-verification
+          if-no-files-found: error
+          retention-days: 7
