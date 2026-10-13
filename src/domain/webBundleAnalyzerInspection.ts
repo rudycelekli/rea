@@ -50,7 +50,10 @@ export interface AnalysisAccumulator {
   readonly seen: Set<string>;
   visitedNodes: number;
   parsedScripts: number;
-  parseFailures: number;
+  readonly parseFailures: Array<{
+    readonly scriptKey: string;
+    readonly reason: string;
+  }>;
 }
 
 export const analyzeScript = (
@@ -60,17 +63,23 @@ export const analyzeScript = (
   let file: ReturnType<typeof parse>;
   try {
     file = parse(script.source.artifact.text, {
-      sourceType: "unambiguous",
+      sourceType: script.is_module ? "module" : "script",
       errorRecovery: true,
       plugins: ["jsx", "typescript"],
     });
   } catch (cause: unknown) {
-    // Unparseable scripts are counted; the failure needs no extra detail.
-    void cause;
-    accumulator.parseFailures += 1;
+    accumulator.parseFailures.push({
+      scriptKey: script.script_key,
+      reason: `Source artifact could not be parsed: ${cause instanceof Error ? cause.message : "Unknown parser failure"}`,
+    });
     return;
   }
   accumulator.parsedScripts += 1;
+  if (file.errors.length > 0)
+    accumulator.parseFailures.push({
+      scriptKey: script.script_key,
+      reason: `The parser recovered ${String(file.errors.length)} syntax error(s); affected static facts are partial: ${file.errors[0]!.message}`,
+    });
   detectVendorFingerprints(script, accumulator);
   const openReceiverFacts = classifyParsedJavaScriptOpenReceivers(file);
   const rpc = createJavaScriptRpcScan(
@@ -387,7 +396,7 @@ export const emptyAccumulator = (): AnalysisAccumulator => ({
   seen: new Set(),
   visitedNodes: 0,
   parsedScripts: 0,
-  parseFailures: 0,
+  parseFailures: [],
 });
 
 export const isIncludedScript = (

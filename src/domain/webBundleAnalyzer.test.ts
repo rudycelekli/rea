@@ -8,6 +8,48 @@ import { createWebTextArtifact } from "./webContentArtifact.js";
 
 const origin = "https://app.example.test";
 
+it("REA parser audit: recovered syntax errors retain facts with partial coverage", () => {
+  const result = analyzeCapturedWebBundle(
+    inspection("const same=1; const same=2; fetch('/observed');"),
+  );
+  expect(result.observations.endpoints).toContainEqual(
+    expect.objectContaining({ value: "/observed" }),
+  );
+  expect(result.completeness.status).toBe("partial");
+  expect(result.unknowns).toContainEqual(
+    expect.objectContaining({ dimension: "javascript_ast" }),
+  );
+});
+
+it("attributes an AST failure to its source without declaring healthy sources unknown", () => {
+  const captured = inspection("function broken( {");
+  const healthy = inspection("fetch('/healthy');").scripts.items[0]!;
+  captured.scripts.items.push({
+    ...healthy,
+    script_key: "healthy",
+    url: `${origin}/healthy.js`,
+  });
+  captured.scripts.total = 2;
+  const result = analyzeCapturedWebBundle(captured);
+  expect(result.observations.endpoints).toContainEqual(
+    expect.objectContaining({ value: "/healthy" }),
+  );
+  expect(
+    result.unknowns.find(({ dimension }) => dimension === "javascript_ast")
+      ?.affected_script_keys,
+  ).toEqual([captured.scripts.items[0]!.script_key]);
+});
+
+it("does not import module-only syntax errors into a captured classic script", () => {
+  const captured = inspection("with({}) { fetch('/classic'); }");
+  captured.scripts.items[0]!.is_module = false;
+  const result = analyzeCapturedWebBundle(captured);
+  expect(result.completeness).toMatchObject({
+    status: "complete",
+    parse_failures: 0,
+  });
+});
+
 describe("web bundle analyzer", () => {
   it("extracts graph, route, endpoint, vendor, and WebMCP evidence", () => {
     const source = `

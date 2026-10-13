@@ -25,7 +25,7 @@ export const buildWebBundleAnalysis = (
   const sourceMapIncomplete =
     sourceMaps.status === "partial" || sourceMaps.status === "unavailable";
   const partial =
-    accumulator.parseFailures > 0 ||
+    accumulator.parseFailures.length > 0 ||
     unavailable.length > 0 ||
     sourceMapIncomplete ||
     omittedScripts !== undefined ||
@@ -44,7 +44,6 @@ export const buildWebBundleAnalysis = (
     },
     inferences: accumulator.inferences,
     unknowns: buildUnknowns({
-      sourceScripts,
       unavailable,
       parseFailures: accumulator.parseFailures,
       sourceMaps,
@@ -54,7 +53,7 @@ export const buildWebBundleAnalysis = (
     completeness: buildCompleteness({
       partial,
       parsedScripts: accumulator.parsedScripts,
-      parseFailures: accumulator.parseFailures,
+      parseFailures: accumulator.parseFailures.length,
       visitedNodes: accumulator.visitedNodes,
     }),
     limitations: bundleLimitations(),
@@ -88,9 +87,8 @@ const chunkNode = (script: IncludedScript) => {
 };
 
 interface UnknownsInput {
-  readonly sourceScripts: IncludedScript[];
   readonly unavailable: string[];
-  readonly parseFailures: number;
+  readonly parseFailures: AnalysisAccumulator["parseFailures"];
   readonly sourceMaps: WebBundleAnalysis["observations"]["source_maps"];
   readonly omittedScripts: number | null | undefined;
   readonly omittedSourceMaps: number | null | undefined;
@@ -115,17 +113,11 @@ const buildUnknowns = (input: UnknownsInput): WebBundleAnalysis["unknowns"] => [
           affected_script_keys: input.unavailable,
         },
       ]),
-  ...(input.parseFailures === 0
-    ? []
-    : [
-        {
-          dimension: "javascript_ast" as const,
-          reason: "One or more source artifacts could not be parsed",
-          affected_script_keys: input.sourceScripts.map(
-            ({ script_key }) => script_key,
-          ),
-        },
-      ]),
+  ...input.parseFailures.map(({ scriptKey, reason }) => ({
+    dimension: "javascript_ast" as const,
+    reason,
+    affected_script_keys: [scriptKey],
+  })),
   ...(input.omittedSourceMaps === undefined
     ? []
     : [
