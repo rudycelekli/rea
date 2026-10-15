@@ -9,11 +9,11 @@ import { buildJavaScriptNativeHandoffs } from "../../../src/domain/javascript/ja
 import { analyzeJavaScriptApplication } from "../../../src/application/javascript/JavaScriptApplicationService.js";
 import { createTestTempDirectory } from "../../fixtures/temporaryDirectory.js";
 
-const analyzeFixture = async (source: string) => {
+const analyzeFixture = async (source: string, entry = "main.ts") => {
   const fixture = await createTestTempDirectory("rea-native-types-");
   const scope = new ArtifactResourceScope();
   try {
-    await writeFile(join(fixture, "main.ts"), `${source}\n`);
+    await writeFile(join(fixture, entry), `${source}\n`);
     await writeFile(join(fixture, "addon.node"), "");
     const result = await analyzeJavaScriptApplication(
       { input_path: fixture, format: "directory" },
@@ -84,4 +84,22 @@ it("does not request native-addon members from erased TypeScript names", async (
     value.graph.nodes.filter((node) => node.kind === "native-export")[0]
       ?.observations[0]?.properties.requested_members,
   ).toEqual(["load"]);
+}, 30_000);
+
+it("records an optional require call as the same native-addon request", async () => {
+  const ordinary = await analyzeFixture(
+    'const addon = require("./addon.node");',
+    "main.cjs",
+  );
+  const optional = await analyzeFixture(
+    'const addon = require?.("./addon.node");',
+    "main.cjs",
+  );
+  for (const result of [ordinary, optional]) {
+    expect(result.summary.native_addon_bindings).toBe(1);
+    expect(result.summary.resolved_native_addon_bindings).toBe(1);
+    expect(
+      result.graph.nodes.filter((node) => node.kind === "native-export"),
+    ).toHaveLength(1);
+  }
 }, 30_000);
