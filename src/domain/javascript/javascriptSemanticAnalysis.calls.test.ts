@@ -432,6 +432,43 @@ describe("JavaScript semantic analysis: calls 2", () => {
   });
 });
 
+describe("JavaScript semantic analysis: conditional call targets", () => {
+  it("keeps a conditionally replaced callback a candidate, not a unique target (issue #3880)", () => {
+    const ir = analyzeJavaScriptSemantics(`
+      function fallback() { return "local"; }
+      export function choose(cb, flag) {
+        if (flag) cb = fallback;
+        return cb();
+      }
+      export function definite(cb) {
+        cb = fallback;
+        return cb();
+      }
+    `);
+    const fallback = onlyCallable(ir, "fallback").callableId;
+    const resolutionAt = (line: number) =>
+      ir.callSites.find(({ location }) => location.start.line === line);
+
+    expect(resolutionAt(5)).toMatchObject({
+      resolution: "ambiguous",
+      calleeCallableIds: [fallback],
+    });
+    expect(ir.frontiers).toEqual([
+      expect.objectContaining({
+        kind: "dynamic-call",
+        location: expect.objectContaining({
+          start: expect.objectContaining({ line: 5 }),
+        }),
+        reason: expect.stringMatching(/conditional assignment/u),
+      }),
+    ]);
+    expect(resolutionAt(9)).toMatchObject({
+      resolution: "exact",
+      calleeCallableIds: [fallback],
+    });
+  });
+});
+
 describe("JavaScript semantic rest parameter flow", () => {
   it.each([
     {

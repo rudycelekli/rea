@@ -141,13 +141,22 @@ const resolveBindingCallables = (
   const callableIds = uniqueCallableIds(
     candidates.flatMap((candidate) => candidate.callableIds),
   );
+  // A write that may not execute leaves the prior value, which this resolver
+  // does not model, as an alternative: its target is a candidate, not unique.
+  const skipped = binding.initializers.some(({ node }) =>
+    context.state.conditionallySkippedExpressions.has(node),
+  );
+  const complete =
+    !skipped && candidates.every((candidate) => candidate.complete);
   const resolution = {
     callableIds,
-    complete: candidates.every(({ complete }) => complete),
+    complete,
     reason:
-      callableIds.length === 1 && candidates.every(({ complete }) => complete)
+      callableIds.length === 1 && complete
         ? "Unique local callable target."
-        : `Call target ${binding.name} has ambiguous or unsupported assignments.`,
+        : skipped
+          ? `Call target ${binding.name} may keep a value from before a conditional assignment.`
+          : `Call target ${binding.name} has ambiguous or unsupported assignments.`,
   };
   if (resolution.complete)
     context.bindingCache.set(binding.bindingId, resolution);
