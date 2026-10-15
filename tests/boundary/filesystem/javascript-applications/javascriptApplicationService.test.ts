@@ -11,7 +11,10 @@ import { ArtifactReaderFailure } from "../../../../src/artifacts/ArtifactReader.
 import { scanCanonicalArtifactInventory } from "../../../fixtures/artifactInventory.js";
 import { createTestTempDirectory } from "../../../fixtures/temporaryDirectory.js";
 import { projectAnalysisError } from "../../../../src/domain/analysisErrorProjection.js";
-import { AnalysisCancelledError } from "../../../../src/domain/analysisErrorCore.js";
+import {
+  AnalysisCancelledError,
+  AnalysisTimeoutError,
+} from "../../../../src/domain/analysisErrorCore.js";
 import {
   analyzeJavaScriptApplication,
   readJavaScriptArtifactFiles,
@@ -78,6 +81,50 @@ describe("JavaScript source selection cancellation boundary", () => {
         outcome.analysis.files.find(({ file }) => file.path === "main.mjs")
           ?.javascript,
       ).toMatchObject({ parse_status: "complete" });
+    } finally {
+      await reader.close();
+    }
+  });
+});
+
+describe("JavaScript source timeout partial analysis", () => {
+  it("attaches the interruption only to unvisited JavaScript sources", async () => {
+    const root = await createTestTempDirectory("rea-js-timeout-scope-");
+    await writeFile(join(root, "a.js"), "export const value = 1;\n");
+    await writeFile(join(root, "b.js"), "export const other = 2;\n");
+    await writeFile(join(root, "z.node"), Buffer.from([0, 1, 2, 3]));
+    await writeFile(join(root, "package.json"), '{"name":"timeout-fixture"}\n');
+    await writeFile(join(root, "page.html"), "<html></html>\n");
+    const snapshot = await scanCanonicalArtifactInventory(root, {});
+    const reader = createJavaScriptArtifactReader(root, "directory");
+    try {
+      const files = await readJavaScriptArtifactFiles(reader, snapshot);
+      const outcome = await analyzeAndAdoptJavaScriptArtifactFiles(
+        files,
+        {
+          analyze: () =>
+            Promise.reject(
+              new AnalysisTimeoutError("analyze_javascript_application", 1),
+            ),
+        },
+        createJavaScriptSemanticGraphProjection(),
+        async () => {},
+      );
+      expect(outcome.interruption).toBeInstanceOf(AnalysisTimeoutError);
+      const failed = outcome.analysis.files
+        .filter(({ analysis_failure }) => analysis_failure !== undefined)
+        .map(({ file }) => file.path);
+      expect(failed).toEqual(["a.js", "b.js"]);
+      const addon = outcome.analysis.files.find(
+        ({ file }) => file.path === "z.node",
+      );
+      expect(addon?.file.kind).toBe("native-addon");
+      expect(addon?.analysis_failure).toBeUndefined();
+      expect(outcome.analysis.packages).toHaveLength(1);
+      expect(
+        outcome.analysis.files.find(({ file }) => file.path === "page.html")
+          ?.analysis_failure,
+      ).toBeUndefined();
     } finally {
       await reader.close();
     }

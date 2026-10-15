@@ -137,6 +137,16 @@ export const analyzeAndAdoptJavaScriptArtifactFiles = async (
 }> => {
   const state = emptyArtifactAnalysis<JavaScriptModuleSemanticIr>();
   let interruption: AnalysisError | null = null;
+  const metadataContext = {
+    state,
+    projectSemantics: function* (
+      _file: JavaScriptArtifactFile,
+      ir: JavaScriptSemanticIr,
+    ): Generator<void, JavaScriptModuleSemanticIr> {
+      yield;
+      return projectJavaScriptModuleSemantics(ir);
+    },
+  };
   const selectedFileCount =
     fileSet.files.length - (fileSet.source_selection?.unselected_files ?? 0);
   let selectedFileIndex = 0;
@@ -156,13 +166,7 @@ export const analyzeAndAdoptJavaScriptArtifactFiles = async (
         throw new AnalysisCancelledError("analyze_javascript_application");
       await beforeFile(file, selectedFileIndex++, selectedFileCount);
       if (file.kind !== "javascript" || !file.text.included) {
-        const steps = analyzeArtifactFileSteps(file, {
-          state,
-          projectSemantics: function* (_file, ir) {
-            yield;
-            return projectJavaScriptModuleSemantics(ir);
-          },
-        });
+        const steps = analyzeArtifactFileSteps(file, metadataContext);
         await completeJavaScriptAnalysisSteps(steps, signal);
         continue;
       }
@@ -280,22 +284,28 @@ export const analyzeAndAdoptJavaScriptArtifactFiles = async (
     for (const file of fileSet.files) {
       if (analyzedPaths.has(file.path)) continue;
       if (classifyOutsideAnalysisScope(file, state, projection)) continue;
+      if (file.kind !== "javascript" || !file.text.included) {
+        // Inventory-only entries never reach the source worker, so the
+        // interruption did not prevent their normal metadata handling.
+        const steps = analyzeArtifactFileSteps(file, metadataContext);
+        while (steps.next().done !== true);
+        continue;
+      }
       state.files.push({
         file,
         javascript: null,
         semantic: null,
         analysis_failure: failure,
       });
-      if (file.kind === "javascript")
-        projection.recordUnavailableFile(
-          file,
-          failure.reason,
-          failure.limits,
-          interruption instanceof AnalysisResourceConstraintError ||
-            interruption instanceof AnalysisTimeoutError
-            ? "resource-limit"
-            : "incomplete-module",
-        );
+      projection.recordUnavailableFile(
+        file,
+        failure.reason,
+        failure.limits,
+        interruption instanceof AnalysisResourceConstraintError ||
+          interruption instanceof AnalysisTimeoutError
+          ? "resource-limit"
+          : "incomplete-module",
+      );
     }
   }
   return { analysis: finalizeArtifactAnalysis(state), interruption };
