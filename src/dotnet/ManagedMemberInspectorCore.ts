@@ -740,17 +740,40 @@ type DecodedSignature = Omit<
 >;
 
 /**
- * Decode a field or member method signature. A malformed or unsupported blob
- * decodes as kind `unknown` with its reason.
+ * The signature kind the owning metadata row requires: a Field row holds a
+ * FieldSig and a MethodDef row a MethodDefSig, while a MemberRef row holds
+ * either.
+ */
+export type ExpectedSignatureKind = "field" | "method" | "either";
+
+/**
+ * Decode a field or member method signature. A malformed or unsupported blob,
+ * or one of a kind the owning row cannot hold, decodes as kind `unknown` with
+ * its reason.
  */
 const decodeSignature = (
   blob: Buffer,
   operands: TypeOperand[] = [],
+  expected: ExpectedSignatureKind = "either",
 ): DecodedSignature => {
   try {
     if (blob.length === 0)
       throw managedFailure("invalid-blob", "signature", "empty signature", 0);
     const first = blob[0] ?? 0;
+    if (expected === "method" && first === 0x06)
+      throw managedFailure(
+        "invalid-blob",
+        "signature",
+        "FIELD signature where a method signature is required",
+        0,
+      );
+    if (expected === "field" && first !== 0x06)
+      throw managedFailure(
+        "invalid-blob",
+        "signature",
+        "method signature where a FIELD signature is required",
+        0,
+      );
     // FieldSig (II.23.2.4) is exactly FIELD; a flagged FIELD header is not a
     // method header either, so it is malformed below.
     if (first === 0x06) {
@@ -887,9 +910,10 @@ export const signature = (
   blob: Buffer,
   rawSha256?: string,
   typeName: SignatureTypeName = () => null,
+  expected: ExpectedSignatureKind = "either",
 ): ManagedSignature => {
   const operands: TypeOperand[] = [];
-  const decoded = decodeSignature(blob, operands);
+  const decoded = decodeSignature(blob, operands, expected);
   return {
     raw_length: blob.length,
     raw_sha256: rawSha256 ?? sha256Bytes(blob),

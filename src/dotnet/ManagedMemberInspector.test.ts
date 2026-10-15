@@ -1627,6 +1627,35 @@ it.each([
   },
 );
 
+it.each([
+  [
+    "a FIELD signature in a MethodDef row",
+    { methodSignature: Buffer.from([0x06, 0x08]) },
+    "methods",
+  ],
+  [
+    "a method signature in a Field row",
+    { fieldSignature: Buffer.from([0x00, 0x00, 0x01]) },
+    "fields",
+  ],
+] as const)(
+  "marks %s malformed with partial coverage",
+  (_name, options, member) => {
+    const bytes = buildManagedPeFixture(options);
+    const result = inspectManagedMembersBytes(
+      bytes,
+      managedPeFixtureTarget(bytes),
+    );
+    expect(result[member][0]?.signature).toMatchObject({
+      kind: "unknown",
+      parse_status: "malformed",
+      return_type: null,
+      field_type: null,
+    });
+    expect(result.coverage.state).toBe("partial");
+  },
+);
+
 it("decodes generic instantiation member signatures as complete coverage", () => {
   // System.Runtime.Caching 0x06000001: instance void (Dictionary<string, object>)
   // shape, with TypeRef/TypeSpec coded tokens kept as encoded.
