@@ -15,14 +15,19 @@ import {
 import { addLocatedFinding } from "./javascriptStaticAnalysisFindings.js";
 import {
   argumentNode,
-  calleeName,
   range,
   stringValue,
 } from "./javascriptStaticAnalysisHelpers.js";
 import {
   propertyName,
   semanticStaticPropertyKey,
+  unwrapJavaScriptExpression,
 } from "./javascriptAstValues.js";
+import {
+  semanticFactoryRequireLoaderAt,
+  semanticRequireLoaderAt,
+} from "./javascriptSemanticRequireOrigin.js";
+import type { JavaScriptSemanticAnalysisState } from "./javascriptSemanticState.js";
 import type { JavaScriptFindingContext } from "./javascriptStaticAnalysisState.js";
 
 interface NativeBindingInput {
@@ -40,12 +45,13 @@ interface NativeBindingInput {
 export const inspectElectronNativeNode = (
   node: t.Node,
   context: JavaScriptFindingContext,
+  bindings: JavaScriptSemanticAnalysisState,
 ): void => {
   if (t.isImportDeclaration(node)) inspectImport(node, context);
   else if (t.isExportNamedDeclaration(node)) inspectNamedExport(node, context);
   else if (t.isExportAllDeclaration(node)) inspectExportAll(node, context);
-  else if (t.isVariableDeclarator(node)) inspectRequireBinding(node, context);
-  else if (t.isAssignmentExpression(node)) inspectReExport(node, context);
+  else if (t.isVariableDeclarator(node)) inspectRequireBinding(node, context, bindings);
+  else if (t.isAssignmentExpression(node)) inspectReExport(node, context, bindings);
 };
 
 const inspectImport = (
@@ -140,8 +146,9 @@ const inspectExportAll = (
 const inspectRequireBinding = (
   node: t.VariableDeclarator,
   context: JavaScriptFindingContext,
+  bindings: JavaScriptSemanticAnalysisState,
 ): void => {
-  const required = nativeRequire(node.init);
+  const required = nativeRequire(node.init, context, bindings);
   if (required === undefined) return;
   addBinding({
     context,
@@ -156,8 +163,9 @@ const inspectRequireBinding = (
 const inspectReExport = (
   node: t.AssignmentExpression,
   context: JavaScriptFindingContext,
+  bindings: JavaScriptSemanticAnalysisState,
 ): void => {
-  const required = nativeRequire(node.right);
+  const required = nativeRequire(node.right, context, bindings);
   if (required === undefined || !isModuleExport(node.left)) return;
   addBinding({
     context,
@@ -200,6 +208,8 @@ const addBinding = (input: NativeBindingInput): void => {
 
 const nativeRequire = (
   node: t.Node | null | undefined,
+  context: JavaScriptFindingContext,
+  bindings: JavaScriptSemanticAnalysisState,
 ):
   | {
       readonly specifier: string;
@@ -218,14 +228,7 @@ const nativeRequire = (
     node = node.object;
   }
   if (!t.isCallExpression(node)) return undefined;
-  const name = calleeName(node.callee);
-  if (
-    name !== "require" &&
-    !name.endsWith(".require") &&
-    !name.includes("__webpack_require__")
-  )
-    return undefined;
-  const specifier = stringValue(argumentNode(node.arguments[0]));
+  const specifier = loaderRequestSpecifier(node, context, bindings);
   return specifier !== undefined && isNativeSpecifier(specifier, "require")
     ? {
         specifier,
@@ -237,6 +240,34 @@ const nativeRequire = (
         },
       }
     : undefined;
+};
+
+/**
+ * Read the requested specifier only from a call whose callee is a proven module
+ * loader. Loader identity comes from the shared lexical binding owner, so a
+ * local function or method that happens to be named `require` is not a request.
+ */
+const loaderRequestSpecifier = (
+  node: t.CallExpression,
+  context: JavaScriptFindingContext,
+  bindings: JavaScriptSemanticAnalysisState,
+): string | undefined => {
+  const factoryBindingIds = context.accumulator.factoryRequireBindingIds;
+  if (t.isIdentifier(node.callee, { name: "require" })) {
+    const loader = semanticRequireLoaderAt(node, bindings, factoryBindingIds);
+    return loader === "local" || loader === "unknown"
+      ? undefined
+      : stringValue(argumentNode(node.arguments[0]));
+  }
+  if (
+    semanticFactoryRequireLoaderAt(node, bindings, factoryBindingIds) !==
+    "factory-loader"
+  )
+    return undefined;
+  const callee = unwrapJavaScriptExpression(node.callee).node;
+  const viaMember =
+    t.isMemberExpression(callee) || t.isOptionalMemberExpression(callee);
+  return stringValue(argumentNode(node.arguments[viaMember ? 1 : 0]));
 };
 
 interface NativeMemberAccess {

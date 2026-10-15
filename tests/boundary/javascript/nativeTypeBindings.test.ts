@@ -9,11 +9,11 @@ import { buildJavaScriptNativeHandoffs } from "../../../src/domain/javascript/ja
 import { analyzeJavaScriptApplication } from "../../../src/application/javascript/JavaScriptApplicationService.js";
 import { createTestTempDirectory } from "../../fixtures/temporaryDirectory.js";
 
-const analyzeFixture = async (source: string) => {
+const analyzeFixture = async (source: string, entry = "main.ts") => {
   const fixture = await createTestTempDirectory("rea-native-types-");
   const scope = new ArtifactResourceScope();
   try {
-    await writeFile(join(fixture, "main.ts"), `${source}\n`);
+    await writeFile(join(fixture, entry), `${source}\n`);
     await writeFile(join(fixture, "addon.node"), "");
     const result = await analyzeJavaScriptApplication(
       { input_path: fixture, format: "directory" },
@@ -84,4 +84,33 @@ it("does not request native-addon members from erased TypeScript names", async (
     value.graph.nodes.filter((node) => node.kind === "native-export")[0]
       ?.observations[0]?.properties.requested_members,
   ).toEqual(["load"]);
+}, 30_000);
+
+it("requests a native addon only through a proven module loader", async () => {
+  const localMethod = await analyzeFixture(
+    "const helper = { require: (name) => ({ name }) };\n" +
+      'const addon = helper.require("./addon.node");',
+    "main.cjs",
+  );
+  expect(localMethod.summary.native_addon_bindings).toBe(0);
+  expect(localMethod.summary.resolved_native_addon_bindings).toBe(0);
+  expect(
+    localMethod.graph.nodes.filter((node) => node.kind === "native-export"),
+  ).toEqual([]);
+
+  const shadowed = await analyzeFixture(
+    'function load(require) { const addon = require("./addon.node"); }',
+    "main.cjs",
+  );
+  expect(shadowed.summary.native_addon_bindings).toBe(0);
+
+  const loader = await analyzeFixture(
+    'const addon = require("./addon.node");',
+    "main.cjs",
+  );
+  expect(loader.summary.native_addon_bindings).toBe(1);
+  expect(loader.summary.resolved_native_addon_bindings).toBe(1);
+  expect(
+    loader.graph.nodes.filter((node) => node.kind === "native-export"),
+  ).toHaveLength(1);
 }, 30_000);
