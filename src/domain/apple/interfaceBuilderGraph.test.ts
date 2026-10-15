@@ -348,6 +348,43 @@ describe("Interface Builder graph limits", () => {
     expect(parsed.omittedObjects).toBe(1);
   });
 
+  it("reports hierarchy entries omitted by the parser's hard ceiling", () => {
+    const hierarchy = Array.from({ length: 20_001 }, () => ({ children: [] }));
+    const parsed = parseInterfaceBuilderRecords({
+      "com.apple.ibtool.document.hierarchy": hierarchy,
+    });
+
+    expect(parsed.hierarchy).toHaveLength(20_000);
+    expect(parsed.omittedHierarchyReferences).toBe(1);
+    expect(
+      parseInterfaceBuilderRecords({
+        "com.apple.ibtool.document.hierarchy": hierarchy.slice(0, 20_000),
+      }).omittedHierarchyReferences,
+    ).toBe(0);
+
+    const result = buildInterfaceBuilderAnalysis({
+      targetSha256: hash,
+      toolVersion: "test",
+      documents: [
+        {
+          relativePath: "Main.nib",
+          archiveSha256: hash,
+          documentKind: "nib",
+          raw: { "com.apple.ibtool.document.hierarchy": hierarchy },
+        },
+      ],
+      limits: interfaceBuilderLimitsSchema.parse({}),
+    });
+    expect(result.graph.truncated).toBe(true);
+    expect(result.graph.coverage).toContainEqual(
+      expect.objectContaining({
+        facet: "hierarchy:Main.nib",
+        status: "partial",
+        omitted: 1,
+      }),
+    );
+  });
+
   it("keeps hierarchy edges out of the connection edge budget", () => {
     const relativePath = "Main.nib";
     const result = buildInterfaceBuilderAnalysis({

@@ -128,16 +128,17 @@ export const parseInterfaceBuilderRecords = (
       );
     }
   }
+  const hierarchyEntries = Array.isArray(hierarchyRaw) ? hierarchyRaw : [];
   return {
     objects,
     connections,
-    hierarchy: Array.isArray(hierarchyRaw) ? hierarchyRaw.slice(0, 20_000) : [],
+    hierarchy: hierarchyEntries.slice(0, 20_000),
     classes: classesRaw,
     objectCount: objectEntries.length,
     omittedObjects: Math.max(0, objectEntries.length - 20_000),
     omittedConnections,
     unresolvedConnections: 0,
-    omittedHierarchyReferences: 0,
+    omittedHierarchyReferences: Math.max(0, hierarchyEntries.length - 20_000),
   };
 };
 
