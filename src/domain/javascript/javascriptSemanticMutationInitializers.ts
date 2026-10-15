@@ -359,15 +359,11 @@ export const semanticMutationInitializers = (
   };
 };
 
-/** Select a local alias at its read, before any later straight-line reassignment. */
-export const semanticReadInitializers = (
-  binding: JavaScriptSemanticBindingState,
+/** Locate a read in its enclosing non-repeating statement list, when provable. */
+const readStatementPosition = (
   read: t.Node,
   parents: WeakMap<t.Node, t.Node>,
-): Pick<
-  JavaScriptSemanticBindingState,
-  "initializers" | "referenceInitializers"
-> => {
+): StatementPosition | null | undefined => {
   let position: StatementPosition | null = null;
   let current = read;
   for (
@@ -375,7 +371,7 @@ export const semanticReadInitializers = (
     parent;
     parent = parents.get(current)
   ) {
-    if (t.isLoop(parent)) return binding;
+    if (t.isLoop(parent)) return undefined;
     if (t.isFunction(parent)) break;
     if (position === null) {
       if (t.isVariableDeclarator(parent)) {
@@ -387,7 +383,43 @@ export const semanticReadInitializers = (
     }
     current = parent;
   }
-  return selectInitializers(binding, position, parents, true);
+  return position;
+};
+
+/** Select a local alias at its read, before any later straight-line reassignment. */
+export const semanticReadInitializers = (
+  binding: JavaScriptSemanticBindingState,
+  read: t.Node,
+  parents: WeakMap<t.Node, t.Node>,
+): Pick<
+  JavaScriptSemanticBindingState,
+  "initializers" | "referenceInitializers"
+> => {
+  const position = readStatementPosition(read, parents);
+  return position === undefined
+    ? binding
+    : selectInitializers(binding, position, parents, true);
+};
+
+/**
+ * Prove that every write to a binding has run before a read. A binding with an
+ * incoming value (a parameter or catch binding) exposes that value to any read
+ * this cannot order after all of its writes.
+ */
+export const semanticReadFollowsInitializers = (
+  binding: JavaScriptSemanticBindingState,
+  read: t.Node,
+  parents: WeakMap<t.Node, t.Node>,
+): boolean => {
+  const position = readStatementPosition(read, parents);
+  if (position === undefined || position === null) return false;
+  return binding.initializers.every(({ node, entryBody }) => {
+    const origin =
+      entryBody === undefined
+        ? directInitializerPosition(node, parents)
+        : { body: entryBody.body, index: -1, declaratorIndex: -1 };
+    return origin !== null && positionPrecedes(origin, position);
+  });
 };
 
 const selectInitializers = (

@@ -9,6 +9,7 @@ import {
   semanticCapturePosition,
   semanticEscapeFollowsCapture,
   semanticBindingPrecedesCapture,
+  semanticReadFollowsInitializers,
   semanticReadInitializers,
 } from "./javascriptSemanticMutationInitializers.js";
 
@@ -448,6 +449,19 @@ const evaluateBinding = (
   return projected;
 };
 
+// A parameter or catch binding starts with a caller-supplied value, which a
+// read not ordered after every assignment still observes.
+const readMayObserveIncomingValue = (
+  binding: JavaScriptSemanticBindingState,
+  read: t.Identifier,
+  context: EvaluationContext,
+): boolean =>
+  binding.initializers.length > 0 &&
+  binding.definitions.some(
+    ({ kind }) => kind === "parameter" || kind === "catch",
+  ) &&
+  !semanticReadFollowsInitializers(binding, read, context.state.parentsByNode);
+
 const evaluateExpression = (
   node: t.Node,
   context: EvaluationContext,
@@ -477,9 +491,16 @@ const evaluateExpression = (
       : { status: "literal", value: literal.value };
   if (t.isIdentifier(node)) {
     const binding = resolveSemanticBindingState(context.state, node, node.name);
-    return binding === undefined
-      ? { status: "unknown", reason: `Unbound identifier ${node.name}.` }
-      : evaluateBinding(binding, nestedContext(context));
+    if (binding === undefined)
+      return { status: "unknown", reason: `Unbound identifier ${node.name}.` };
+    if (readMayObserveIncomingValue(binding, node, context)) {
+      recordBindingDependency(binding, context);
+      return {
+        status: "unknown",
+        reason: `Binding ${binding.name} may be read before its assignment.`,
+      };
+    }
+    return evaluateBinding(binding, nestedContext(context));
   }
   if (t.isTemplateLiteral(node)) return evaluateTemplate(node, context);
   if (t.isConditionalExpression(node))
