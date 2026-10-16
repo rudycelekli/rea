@@ -67,6 +67,31 @@ architecture arm64e
     ]);
   });
 
+  it("keeps the numbers lipo prints for a CPU it cannot name", () => {
+    expect(
+      parseLipoOutput(`Fat header in: /bin/echo
+fat_magic 0xcafebabe
+nfat_arch 1
+architecture (cputype (16777228) cpusubtype (12))
+    cputype (16777228)
+    cpusubtype cpusubtype (12)
+    offset 114688
+    size 51792
+    align 2^14 (16384)
+`).architectures,
+    ).toMatchObject([
+      {
+        name: "(cputype (16777228) cpusubtype (12))",
+        cpu_type_code: 0x0100000c,
+        cpu_subtype_code: null,
+        cpu_subtype_base: 12,
+        file_offset: 114688,
+        size: 51792,
+        alignment: 16384,
+      },
+    ]);
+  });
+
   it("keeps unknown symbolic CPU values as source text without a code", () => {
     expect(
       parseLipoOutput(

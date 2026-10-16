@@ -149,7 +149,7 @@ const CPU_SUBTYPES: Readonly<Record<string, number>> = {
 /** Normalize known lipo names while retaining the producer's original text. */
 const cpuTypeCode = (value: string | undefined): number | null => {
   if (value === undefined) return null;
-  const numeric = unsigned32(value);
+  const numeric = unsigned32(value) ?? unnamedFieldNumber(value, "cputype");
   return numeric ?? CPU_TYPES[value] ?? null;
 };
 
@@ -185,7 +185,10 @@ const cpuSubtypeCode = (
 /** The subtype bits a lipo record names, without its capability byte. */
 const cpuSubtypeBase = (value: string | undefined): number | null => {
   if (value === undefined) return null;
-  const subtype = unsigned32(value) ?? CPU_SUBTYPES[value];
+  const subtype =
+    unsigned32(value) ??
+    unnamedFieldNumber(value, "cpusubtype") ??
+    CPU_SUBTYPES[value];
   return subtype === undefined ? null : machoCpuSubtypeBase(subtype);
 };
 
@@ -194,6 +197,20 @@ const capabilityBits = (capabilities: string | undefined): number | null => {
   if (capabilities === "CPU_SUBTYPE_LIB64") return 0x80;
   const bits = /^0x([\da-f]{1,2})$/iu.exec(capabilities ?? "")?.[1];
   return bits === undefined ? null : Number.parseInt(bits, 16);
+};
+
+/**
+ * A CPU lipo cannot name is printed as `(N)` under `cputype` and as
+ * `cpusubtype (N)` under `cpusubtype`; its capability bits are not printed, so
+ * the number is a type or a subtype base, never a complete subtype.
+ */
+const unnamedFieldNumber = (
+  value: string,
+  field: "cputype" | "cpusubtype",
+): number | null => {
+  const text = field === "cputype" ? value : value.replace(/^cpusubtype /u, "");
+  const digits = /^\((\d+)\)$/u.exec(text)?.[1];
+  return digits === undefined ? null : unsigned32(digits);
 };
 
 const unsigned32 = (value: string): number | null => {

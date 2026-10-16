@@ -351,3 +351,65 @@ describe("universal slices outside the structural index", () => {
     },
   );
 });
+
+describe("Mach-O slices lipo cannot name", () => {
+  it("matches the slice lipo prints without a name by its CPU, range and alignment", async () => {
+    const root = await createTestTempDirectory("rea-slices-unnamed-");
+    const binary = join(root, "fat");
+    const slices = [
+      {
+        name: "arm64e",
+        cpu: CPU.arm64e,
+        bytes: machoImage({ cpu: CPU.arm64e }),
+      },
+      {
+        name: "arm64e.x1",
+        cpu: CPU.arm64eX1,
+        bytes: machoImage({ cpu: CPU.arm64eX1 }),
+      },
+    ];
+    await writeFile(binary, fatImage(slices));
+    // What lipo prints for a stock macOS system binary's third slice.
+    const stdout = (sliceName: string, subtype: string, offset: number) =>
+      `architecture ${sliceName}\n    cputype CPU_TYPE_ARM64\n    cpusubtype ${subtype}\n    offset ${String(offset)}\n    size ${String(slices[0]!.bytes.length)}\n    align 2^12 (4096)\n`;
+    const unnamed = (offset: number) =>
+      `architecture (cputype (16777228) cpusubtype (12))\n    cputype (16777228)\n    cpusubtype cpusubtype (12)\n    offset ${String(offset)}\n    size ${String(slices[1]!.bytes.length)}\n    align 2^12 (4096)\n`;
+    const runner = (output: string): NativeCommandRunner => ({
+      run: () =>
+        Promise.resolve(
+          ok({
+            tool: "lipo",
+            executable: "/usr/bin/lipo",
+            executableSha256: "1".repeat(64),
+            toolVersion: null,
+            versionReason: "fixture",
+            arguments: ["-detailed_info", binary],
+            stdout: output,
+            stderr: "",
+            stdoutBytes: 1,
+            stderrBytes: 0,
+            exitCode: 0,
+            signal: null,
+          }),
+        ),
+    });
+    const list = async (output: string) => {
+      const reader = new MachOSliceArtifactReader(binary, {}, runner(output));
+      onTestFinished(() => reader.close());
+      const entries = [];
+      for await (const entry of reader.entries()) entries.push(entry);
+      return entries;
+    };
+    const entries = await list(
+      stdout("arm64e", "CPU_SUBTYPE_ARM64E", 4096) + unnamed(8192),
+    );
+    expect(entries.map(({ path, byteOffset }) => [path, byteOffset])).toEqual([
+      ["slices/arm64e", 4096],
+      ["slices/(cputype (16777228) cpusubtype (12))", 8192],
+    ]);
+    // The unnamed form still has to agree with the FAT table on every field.
+    await expect(
+      list(stdout("arm64e", "CPU_SUBTYPE_ARM64E", 4096) + unnamed(12288)),
+    ).rejects.toMatchObject({ reason: "integrity" });
+  });
+});

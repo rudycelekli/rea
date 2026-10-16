@@ -459,7 +459,7 @@ const lipoMatchesSlice = (
     reported.cpu_subtype_code !== null;
   return (
     (hasPhysicalIdentity || structurallyUnique) &&
-    lipoNameMatches(reported.name, observed.architecture) &&
+    lipoNameMatches(reported, observed.architecture) &&
     (reported.file_offset === null ||
       reported.file_offset === observed.slice_offset) &&
     (reported.size === null || reported.size === observed.slice_size) &&
@@ -493,6 +493,21 @@ const lipoSubtypeMatches = (
  * `arm64e.v1` for pointer-auth ABI version 1). The FAT table names that slice
  * `arm64e`; its physical identity is still compared field by field.
  */
-const lipoNameMatches = (reported: string, observed: string): boolean =>
-  reported === observed ||
-  (observed === "arm64e" && /^arm64e\.[A-Za-z0-9_]+$/u.test(reported));
+const lipoNameMatches = (
+  reported: LipoArchitecture,
+  observed: string,
+): boolean =>
+  reported.name === observed ||
+  (observed === "arm64e" && /^arm64e\.[A-Za-z0-9_]+$/u.test(reported.name)) ||
+  isUnnamedLipoArchitecture(reported);
+
+/**
+ * lipo prints `(cputype (N) cpusubtype (M))` for a CPU it has no name for, such
+ * as the `arm64e.x1` slice of current macOS system binaries. There is no name
+ * to compare, so the slice is matched by the CPU type and subtype it printed
+ * (and by its offset, size and alignment) instead.
+ */
+const isUnnamedLipoArchitecture = (reported: LipoArchitecture): boolean =>
+  /^\(cputype \(\d+\) cpusubtype \(\d+\)\)$/u.test(reported.name) &&
+  reported.cpu_type_code !== null &&
+  reported.cpu_subtype_base !== null;
