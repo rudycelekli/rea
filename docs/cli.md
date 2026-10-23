@@ -670,7 +670,8 @@ dependencies remain `requires` relationships whether or not they are exported.
 Historical dependencies also include TypeScript import types (`import("./dep").T`
 and `typeof import("./dep")`) and declarations inside ambient module bodies;
 these source relationships do not assert runtime loading. Language labels retain
-the conventional case-sensitive `.C` (C++) and `.M` (Objective-C++) suffixes.
+the conventional case-sensitive `.C` and `.H` (C++) and `.M` (Objective-C++)
+suffixes.
 
 REA derives historical CommonJS paths only when the selected loader and its
 base are proven: this includes the exact

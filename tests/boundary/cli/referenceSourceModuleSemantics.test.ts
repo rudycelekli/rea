@@ -180,6 +180,8 @@ cliTest(
     const languages = {
       "upper.C": "C++",
       "lower.c": "C",
+      "upper.H": "C++",
+      "lower.h": "C",
       "upper.M": "Objective-C++",
       "lower.m": "Objective-C",
     };
