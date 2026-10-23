@@ -443,7 +443,8 @@ preflight before any
 removal. Repeats inside an inactive earlier copy of the server table stay
 unchanged. A purge path that is a
 symbolic link is retained and reported rather than followed. Uninstall checks
-REA's managed shared and Claude Code personal skill locations. See the
+every managed skill destination: the shared `~/.agents/skills` copy and each
+client that has its own skill directory. See the
 [CLI guide](cli.md#output-and-exit-status) for exit statuses.
 
 ### Missing dependencies in an npx installation
