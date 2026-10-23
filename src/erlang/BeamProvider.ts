@@ -1,6 +1,10 @@
 import { ArtifactReaderFailure } from "../artifacts/ArtifactReader.js";
-import { readStableArtifact } from "../artifacts/readStableArtifact.js";
 import {
+  readStableArtifact,
+  type StableArtifactSnapshot,
+} from "../artifacts/readStableArtifact.js";
+import {
+  artifactFileCompletion,
   artifactFilePrimaryFailure,
   artifactSelectedPathErrno,
   bindArtifactFileCleanup,
@@ -26,6 +30,7 @@ import {
 } from "../domain/erlang/beam.js";
 import { err, ok } from "../domain/result.js";
 import { ProviderCleanupError } from "../domain/providerCleanupError.js";
+import { fileSnapshotPartialObservationSchema } from "../domain/fileSnapshotObservation.js";
 import { BeamCapacityFailure, parseErlangBeam } from "./BeamParser.js";
 
 /** Bundled format reader identity; module names are separate observed facts. */
@@ -185,6 +190,20 @@ const beamFailurePrimary = (cause: unknown, input: InspectErlangBeamInput) => {
 
 const beamFailure = (cause: unknown, input: InspectErlangBeamInput) => {
   const primary = beamFailurePrimary(artifactFilePrimaryFailure(cause), input);
+  const completed = artifactFileCompletion(cause);
+  if (completed !== undefined) {
+    // This inspect boundary acquires exactly one StableArtifactSnapshot before
+    // BEAM parsing. Completion describes that read, not a decoded report.
+    const snapshot = completed.value as StableArtifactSnapshot;
+    primary.retainPartialObservation(
+      fileSnapshotPartialObservationSchema.parse({
+        kind: "file-snapshot-hash",
+        path: input.path,
+        sha256: snapshot.sha256,
+        bytes: snapshot.bytes.length,
+      }),
+    );
+  }
   if (!(cause instanceof ArtifactReaderFailure) || cause.cleanup === undefined)
     return primary;
   const cleanup = new ProviderCleanupError(
