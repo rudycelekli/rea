@@ -47,9 +47,11 @@ export const parseDecoderDiscovery = (
     lines.forEach((line, i) => help.push({ line_number: i + 1, text: line }));
   }
   const catalog = input.decoder === null;
+  // ID and name are separate catalog columns; a query spanning the padding
+  // sigrok prints between them occurs in neither.
   const matching = catalog
     ? decoders.filter(({ id, name }) =>
-        `${id} ${name}`.toLowerCase().includes(query),
+        [id, name].some((value) => value.toLowerCase().includes(query)),
       )
     : help.filter(({ text: line }) => line.toLowerCase().includes(query));
   const start = Math.min(input.offset, matching.length);

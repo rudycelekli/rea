@@ -46,3 +46,17 @@ it("bounds line expansion before constructing help records", () => {
     ),
   ).toThrow("representation budget");
 });
+
+it("matches catalog queries within the decoder ID or name, not across them", () => {
+  const text =
+    "Supported protocol decoders:\n  uart                 Universal Asynchronous Receiver/Transmitter\n";
+  const matches = (query: string) =>
+    parseDecoderDiscovery(
+      text,
+      inspectSignalDecodersInputSchema.parse({ query }),
+    ).output_window.matching;
+  expect(matches("UART")).toBe(1);
+  expect(matches("receiver/")).toBe(1);
+  expect(matches("uart U")).toBe(0);
+  expect(matches("art Uni")).toBe(0);
+});
