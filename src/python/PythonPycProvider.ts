@@ -1,11 +1,15 @@
 import { isSelectedRegularFileError } from "../filesystem/RegularFile.js";
 import {
   artifactFileCancellationCause,
+  artifactFileCompletion,
   artifactFilePrimaryFailure,
   bindArtifactFileCleanup,
 } from "../artifacts/ArtifactFileOperation.js";
 import { ArtifactReaderFailure } from "../artifacts/ArtifactReader.js";
-import { readStableArtifact } from "../artifacts/readStableArtifact.js";
+import {
+  readStableArtifact,
+  type StableArtifactSnapshot,
+} from "../artifacts/readStableArtifact.js";
 import { ArtifactResourceScope } from "../artifacts/ArtifactResourceScope.js";
 import { analysisErrorWithCleanupFailure } from "../domain/analysisErrorCleanup.js";
 import type { PythonPycPort } from "../application/python/PythonPycPort.js";
@@ -25,6 +29,7 @@ import {
 } from "../domain/python/pythonPyc.js";
 import { ProviderAdapterError } from "../domain/providerAdapterError.js";
 import { ProviderCleanupError } from "../domain/providerCleanupError.js";
+import { fileSnapshotPartialObservationSchema } from "../domain/fileSnapshotObservation.js";
 import { err, ok } from "../domain/result.js";
 import {
   PythonPycFormatFailure,
@@ -147,6 +152,20 @@ const failureForPrimary = (cause: unknown, input: InspectPythonPycInput) => {
 
 const failureFor = (cause: unknown, input: InspectPythonPycInput) => {
   const primary = failureForPrimary(artifactFilePrimaryFailure(cause), input);
+  const completed = artifactFileCompletion(cause);
+  if (completed !== undefined) {
+    // This inspect boundary acquires exactly one StableArtifactSnapshot before
+    // pyc parsing. Completion describes that read, not a decoded report.
+    const snapshot = completed.value as StableArtifactSnapshot;
+    primary.retainPartialObservation(
+      fileSnapshotPartialObservationSchema.parse({
+        kind: "file-snapshot-hash",
+        path: input.path,
+        sha256: snapshot.sha256,
+        bytes: snapshot.bytes.length,
+      }),
+    );
+  }
   if (!(cause instanceof ArtifactReaderFailure) || cause.cleanup === undefined)
     return primary;
   const cleanup = new ProviderCleanupError(
