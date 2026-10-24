@@ -7,6 +7,7 @@ import {
   artifactFileCancellationCause,
 } from "../../artifacts/ArtifactFileOperation.js";
 import {
+  binaryLayoutUnsupportedTarget,
   pwntoolsDecoderFailure,
   pwntoolsUnavailable,
   capturedPwntoolsOutput,
@@ -30,7 +31,6 @@ import { AnalysisError } from "../../domain/analysisErrorBase.js";
 import {
   AnalysisCancelledError,
   AnalysisCapabilityUnavailableError,
-  AnalysisUnsupportedTargetError,
   AnalysisInputError,
   AnalysisOutputError,
   AnalysisResourceConstraintError,
@@ -418,11 +418,10 @@ export class PwntoolsDecoder<
       }
       if (!reply.ok) {
         if (reply.reason === "unsupported-target")
-          throw new AnalysisUnsupportedTargetError(
-            OPERATION,
+          throw binaryLayoutUnsupportedTarget(
             input.path,
             reply.message,
-            { capturedOutput },
+            capturedOutput,
           );
         if (reply.reason === "resource-limit")
           throw new AnalysisResourceConstraintError(

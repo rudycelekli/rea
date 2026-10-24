@@ -16,6 +16,7 @@ import {
   AnalysisOutputError,
   AnalysisTimeoutError,
   AnalysisResourceConstraintError,
+  AnalysisUnsupportedTargetError,
 } from "../../domain/analysisErrorCore.js";
 import { ProviderAdapterError } from "../../domain/providerAdapterError.js";
 import { ProviderCleanupError } from "../../domain/providerCleanupError.js";
@@ -29,6 +30,22 @@ import {
   PWNTOOLS_MEMORY_FAILURE_EXIT,
   PWNTOOLS_FILE_SIZE_FAILURE_EXIT,
 } from "./PwntoolsRelease.js";
+
+const ELF64_LAYOUT_BOUNDARY =
+  "inspect_binary_layout admits ELF64 little-endian x86-64 EXEC, DYN, and REL only. ELF32 and other classes or byte orders have no layout profile. analyze_function with the Ghidra provider can analyze a supported ELF32 target, but it does not return section, segment, symbol, or relocation layout.";
+
+/** Name the ELF64 layout boundary instead of implying an unnamed layout operation exists. */
+export const binaryLayoutUnsupportedTarget = (
+  path: string,
+  message: string,
+  capturedOutput?: AnalysisCapturedOutput,
+): AnalysisUnsupportedTargetError =>
+  new AnalysisUnsupportedTargetError("inspect_binary_layout", path, message, {
+    ...(capturedOutput === undefined ? {} : { capturedOutput }),
+    ...(message.includes("requires ELF64 little-endian")
+      ? { remediationAction: ELF64_LAYOUT_BOUNDARY }
+      : {}),
+  });
 
 /** Operation identity supplied by each adapter sharing the pwntools boundary. */
 export interface PwntoolsFailureContext {

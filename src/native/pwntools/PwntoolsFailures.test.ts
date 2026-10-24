@@ -2,7 +2,10 @@ import { expect, it } from "vitest";
 import { ArtifactReaderFailure } from "../../artifacts/ArtifactReader.js";
 import { projectAnalysisError } from "../../domain/analysisErrorProjection.js";
 import { OwnedCommandFailure } from "../../process/OwnedCommand.js";
-import { pwntoolsDecoderFailure } from "./PwntoolsFailures.js";
+import {
+  binaryLayoutUnsupportedTarget,
+  pwntoolsDecoderFailure,
+} from "./PwntoolsFailures.js";
 
 it.each([undefined, null, false, 0, "stop", { stop: true }, new Error("stop")])(
   "preserves opaque cancellation from command and artifact owners: %s",
@@ -24,6 +27,24 @@ it.each([undefined, null, false, 0, "stop", { stop: true }, new Error("stop")])(
     }
   },
 );
+
+it("names the ELF64 boundary when layout refuses an ELF32 object", () => {
+  const projected = projectAnalysisError(
+    binaryLayoutUnsupportedTarget(
+      "/sample.elf",
+      "Initial layout profile requires ELF64 little-endian objects.",
+    ),
+  );
+  expect(projected.code).toBe("unsupported_target");
+  expect(projected.remediation.action).toContain(
+    "ELF64 little-endian x86-64",
+  );
+  expect(projected.remediation.action).toContain("no layout profile");
+  expect(projected.remediation.action).toContain("analyze_function");
+  expect(projected.remediation.action).not.toContain(
+    "choose an operation supporting the reported target format",
+  );
+});
 
 it("names pwntools_timeout_ms and leaves cpuSeconds and byte allowances fixed", () => {
   const projected = projectAnalysisError(
