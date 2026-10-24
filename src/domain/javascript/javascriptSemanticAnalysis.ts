@@ -1014,19 +1014,48 @@ const electronRequireOrigin = (
 const bindingOrigin = (
   binding: JavaScriptSemanticBindingState,
   state: JavaScriptSemanticAnalysisState,
+  seen: ReadonlySet<string> = new Set(),
 ): JavaScriptModuleOrigin | undefined => {
   if (binding.directOrigins.length > 0)
     return binding.directOrigins.length === 1
       ? binding.directOrigins[0]
       : undefined;
+  if (seen.has(binding.bindingId)) return undefined;
   const initializer = semanticStableInitializer(binding, state);
   if (initializer === undefined) return undefined;
-  const origin = electronRequireOrigin(initializer.node, state)?.origin;
+  // A require call names the module directly; a bare alias such as
+  // `const { ipcMain } = electronExternal` carries the module identity of
+  // another binding, so follow it and append this binding's projection.
+  const origin =
+    electronRequireOrigin(initializer.node, state)?.origin ??
+    aliasedBindingOrigin(initializer.node, state, seen, binding.bindingId);
   const projection = initializer.projection;
   return origin === undefined ||
     !projection.every((key): key is string => typeof key === "string")
     ? undefined
     : { ...origin, importedPath: [...origin.importedPath, ...projection] };
+};
+
+const aliasedBindingOrigin = (
+  node: t.Node,
+  state: JavaScriptSemanticAnalysisState,
+  seen: ReadonlySet<string>,
+  from: string,
+): JavaScriptModuleOrigin | undefined => {
+  const reference = unwrapJavaScriptExpression(node).node;
+  if (
+    !t.isIdentifier(reference) ||
+    semanticResolutionBlocked(state, reference, reference.name)
+  )
+    return undefined;
+  const target = resolveSemanticBindingState(state, reference, reference.name);
+  // A reassigned alias no longer carries a single stable module identity.
+  if (
+    target === undefined ||
+    target.definitions.some(({ kind }) => kind === "assignment")
+  )
+    return undefined;
+  return bindingOrigin(target, state, new Set([...seen, from]));
 };
 
 const createState = (

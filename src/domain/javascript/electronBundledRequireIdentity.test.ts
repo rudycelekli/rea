@@ -497,3 +497,57 @@ describe("Webpack identity through erased TypeScript syntax", () => {
     },
   );
 });
+
+// Webpack lowers the common CommonJS idiom
+// `const { app, BrowserWindow, ipcMain } = require("electron")` to an object
+// pattern over a proven module-table external. Member reads from the external
+// already resolve (#2948); the destructured binding must carry the same
+// Electron identity so windows and handlers behind it are not dropped (#4490).
+describe("Electron identity through destructured Webpack externals", () => {
+  it("recovers a window hidden behind a destructured BrowserWindow", () => {
+    const electron = electronOf(
+      bootstrap(
+        EXTERNAL,
+        "const ext=n(45840);const {BrowserWindow}=ext;" +
+          'new BrowserWindow({webPreferences:{preload:"./preload.js",nodeIntegration:true}});',
+      ),
+    );
+    expect(electron.browser_windows).toMatchObject([
+      { preload_path: "./preload.js" },
+    ]);
+  });
+
+  it("follows a renamed destructured BrowserWindow binding", () => {
+    const electron = electronOf(
+      bootstrap(
+        EXTERNAL,
+        "const ext=n(45840);const {BrowserWindow:Win}=ext;" +
+          'new Win({webPreferences:{preload:"./p.js"}});',
+      ),
+    );
+    expect(electron.browser_windows).toMatchObject([
+      { preload_path: "./p.js" },
+    ]);
+  });
+
+  it("follows a destructured handler used inside a nested guard", () => {
+    const electron = electronOf(
+      bootstrap(
+        EXTERNAL,
+        "const ext=n(45840);const {app,ipcMain}=ext;" +
+          'const init=()=>{if(!ipcMain||!app)return;ipcMain.on("chan-c",()=>{})};init();',
+      ),
+    );
+    expect(electron.ipc).toMatchObject([{ channel: "chan-c", side: "main" }]);
+  });
+
+  it("keeps a destructured pattern over a non-external unresolved", () => {
+    expectUnresolved(
+      bootstrap(
+        "e=>{e.exports={BrowserWindow:class{}}}",
+        "const ext=n(45840);const {BrowserWindow}=ext;" +
+          "new BrowserWindow({webPreferences:{nodeIntegration:true}});",
+      ),
+    );
+  });
+});
