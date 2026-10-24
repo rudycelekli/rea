@@ -1,6 +1,7 @@
-import type {
-  Devicetree,
-  InspectDevicetreeInput,
+import {
+  DEVICETREE_LIMIT_CEILINGS,
+  type Devicetree,
+  type InspectDevicetreeInput,
 } from "../../domain/firmware/devicetree.js";
 import { BinaryFormatFailure } from "../../native/metadata/BinaryContainer.js";
 
@@ -9,11 +10,14 @@ export class DevicetreeLimitFailure extends Error {
     readonly limit:
       | keyof Omit<InspectDevicetreeInput, "path">
       | "decoded_bytes",
+    selected?: number,
   ) {
     super(
       limit === "decoded_bytes"
         ? "Devicetree exceeds its fixed 32 MiB decoded representation allowance; select a smaller blob. This allowance has no runtime override."
-        : `Devicetree exceeds ${limit}; raise that caller-selected limit within its schema ceiling or select a smaller blob.`,
+        : selected !== undefined && selected >= DEVICETREE_LIMIT_CEILINGS[limit]
+          ? `Devicetree exceeds ${limit} at its ${String(DEVICETREE_LIMIT_CEILINGS[limit])} schema ceiling; select a smaller blob. This limit cannot be raised further.`
+          : `Devicetree exceeds ${limit}; raise that caller-selected limit within its schema ceiling or select a smaller blob.`,
     );
   }
 }
@@ -30,7 +34,7 @@ export const parseDevicetree = (
   input: InspectDevicetreeInput,
 ): Devicetree => {
   if (bytes.length > input.max_file_bytes)
-    throw new DevicetreeLimitFailure("max_file_bytes");
+    throw new DevicetreeLimitFailure("max_file_bytes", input.max_file_bytes);
   if (bytes.length < 28) malformed("Truncated FDT header");
   const u32 = (offset: number) => bytes.readUInt32BE(offset);
   if (u32(0) !== 0xd00dfeed)
@@ -113,7 +117,7 @@ export const parseDevicetree = (
     cursor += 16;
     if (address === 0n && size === 0n) break;
     if (reservations.length >= input.max_properties)
-      throw new DevicetreeLimitFailure("max_properties");
+      throw new DevicetreeLimitFailure("max_properties", input.max_properties);
     admit(128);
     reservations.push({
       offset: cursor - 16,
@@ -155,9 +159,9 @@ export const parseDevicetree = (
     cursor += 4;
     if (token === 1) {
       if (stack.length >= input.max_depth)
-        throw new DevicetreeLimitFailure("max_depth");
+        throw new DevicetreeLimitFailure("max_depth", input.max_depth);
       if (nodes.length >= input.max_nodes)
-        throw new DevicetreeLimitFailure("max_nodes");
+        throw new DevicetreeLimitFailure("max_nodes", input.max_nodes);
       const name = text(cursor, structEnd);
       cursor = align(name.next);
       need(0);
@@ -196,7 +200,10 @@ export const parseDevicetree = (
       cursor += 8;
       need(length);
       if (++properties > input.max_properties)
-        throw new DevicetreeLimitFailure("max_properties");
+        throw new DevicetreeLimitFailure(
+          "max_properties",
+          input.max_properties,
+        );
       if (nameoff >= header.size_dt_strings)
         malformed("FDT property string offset out of range");
       let name = names.get(nameoff);

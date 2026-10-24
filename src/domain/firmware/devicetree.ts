@@ -3,6 +3,13 @@ import { digestSchema } from "../digests.js";
 import { localPathStringSchema } from "../localPath.js";
 const uint = z.number().int().min(0).max(0xffffffff);
 export const MAX_DEVICETREE_FILE_BYTES = 16777216;
+/** Schema ceilings for each caller-selected devicetree budget. */
+export const DEVICETREE_LIMIT_CEILINGS = {
+  max_file_bytes: MAX_DEVICETREE_FILE_BYTES,
+  max_nodes: 65536,
+  max_properties: 262144,
+  max_depth: 256,
+} as const;
 export const inspectDevicetreeInputSchema = z.strictObject({
   path: localPathStringSchema,
   max_file_bytes: z
@@ -11,9 +18,24 @@ export const inspectDevicetreeInputSchema = z.strictObject({
     .min(40)
     .max(MAX_DEVICETREE_FILE_BYTES)
     .default(4194304),
-  max_nodes: z.number().int().min(1).max(65536).default(8192),
-  max_properties: z.number().int().min(1).max(262144).default(32768),
-  max_depth: z.number().int().min(1).max(256).default(64),
+  max_nodes: z
+    .number()
+    .int()
+    .min(1)
+    .max(DEVICETREE_LIMIT_CEILINGS.max_nodes)
+    .default(8192),
+  max_properties: z
+    .number()
+    .int()
+    .min(1)
+    .max(DEVICETREE_LIMIT_CEILINGS.max_properties)
+    .default(32768),
+  max_depth: z
+    .number()
+    .int()
+    .min(1)
+    .max(DEVICETREE_LIMIT_CEILINGS.max_depth)
+    .default(64),
 });
 export const devicetreePropertySchema = z.strictObject({
   name: z.string(),
