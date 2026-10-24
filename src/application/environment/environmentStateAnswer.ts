@@ -358,6 +358,7 @@ interface ToolCall {
   readonly tool: EnvironmentManifestTool;
   readonly args: ReplayArguments;
   readonly exact: boolean;
+  readonly observedQuery?: ObservedQuery | undefined;
 }
 
 /**
@@ -420,12 +421,12 @@ const answerList = (
   base: RecordedExchange,
 ): Result<StateAnswer, AnalysisError> => {
   const { source, store } = serving;
-  const { tool, args, exact } = call;
+  const { tool, args, exact, observedQuery } = call;
   const envelope = recordedJson(base);
   const recorded =
     envelope === undefined ? undefined : listItems(envelope, view.pointer);
   if (envelope === undefined || recorded === undefined)
-    return fromRecording(source, tool, args, "body-unusable");
+    return fromRecording(source, tool, args, "body-unusable", observedQuery);
   // A requested page the collection has outgrown is answered as recorded, never with more items than it asked for.
   const size = exact
     ? pageBound(base.query ?? undefined, recorded.length)
@@ -435,10 +436,16 @@ const answerList = (
     size !== undefined &&
     store.inCollection(view.type, collectionPathOf(base, false)).length > size
   )
-    return fromRecording(source, tool, args, "page-exceeded");
+    return fromRecording(source, tool, args, "page-exceeded", observedQuery);
   const selection = listSelection(store, call, view, { base, recorded });
   if (selection === undefined)
-    return fromRecording(source, tool, args, "unrecorded-request");
+    return fromRecording(
+      source,
+      tool,
+      args,
+      "unrecorded-request",
+      observedQuery,
+    );
   const volatile = new Set(store.type(view.type)?.volatile_fields);
   const items: JsonObject[] = [];
   for (const entity of selection.members) {
@@ -519,7 +526,7 @@ const answerCheckedLine = (
   return view.shape === "list"
     ? answerList(
         serving,
-        { tool, args, exact: named !== undefined },
+        { tool, args, exact: named !== undefined, observedQuery },
         view,
         base,
       )

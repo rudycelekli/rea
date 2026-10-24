@@ -465,6 +465,46 @@ describe("list answer coverage and bounds", () => {
     );
   });
 
+  it("replays an outgrown page by the call's observed query order", () => {
+    const alpha = { id: 1, name: "Alpha" };
+    const beta = { id: 2, name: "Beta" };
+    const gamma = { id: 3, name: "Gamma" };
+    const books = servingFrom([
+      ["GET", "/api/books?limit=2&offset=0", [alpha, beta]],
+      ["GET", "/api/books?offset=0&limit=2", [alpha, beta]],
+      ["POST", "/api/books", gamma, 201, { name: "Gamma" }],
+      ["GET", "/api/books/3", gamma],
+      ["GET", "/api/books", [alpha, beta, gamma]],
+    ]);
+    // A created book outgrows the recorded two-item page.
+    load(books, (entities) => [
+      ...entities,
+      {
+        type: "/api/books",
+        collection: "/api/books",
+        id: "4",
+        fields: { id: 4, name: "Delta" },
+      },
+    ]);
+    const tool = toolOf(books.source, "get_books");
+    for (const [observed, ordinal] of [
+      ["?limit=2&offset=0", 0],
+      ["?offset=0&limit=2", 1],
+    ] as const) {
+      const result = answerFromState(
+        books,
+        tool,
+        { limit: "2", offset: "0" },
+        observed,
+      );
+      if (!result.ok) throw result.error;
+      expect(result.value).toMatchObject({
+        replay: { record_ordinal: ordinal, exact_match: true },
+        state: { source: "recording", reason: "page-exceeded" },
+      });
+    }
+  });
+
   it("refuses a list whose member lacks a field every recording carried, never answering a partial body", () => {
     const serving = servingOf();
     load(serving, (entities) =>
