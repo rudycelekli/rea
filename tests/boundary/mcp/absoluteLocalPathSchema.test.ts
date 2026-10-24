@@ -191,6 +191,18 @@ const inputCases = (
         ],
       },
     ),
+    ...["capture_path", "output_directory"].map((field) =>
+      pathCase(
+        "export_web_scripts",
+        field,
+        { capture_path: absolute, output_directory: absolute },
+        {
+          capture_path: absolute,
+          output_directory: absolute,
+          [field]: relative,
+        },
+      ),
+    ),
     ...standaloneAnalysisCases(absolute, relative),
     ...["executable_path", "application_path", "application_root"].map(
       (field) =>
