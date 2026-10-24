@@ -211,6 +211,29 @@ describe("recordless legacy MIPS32 admission", () => {
     },
   );
 
+  it("admits a recordless EF_MIPS_ARCH_0 executable with the pinned 32-bit language", async () => {
+    const ghidra = new GhidraProvider(config, silentLogger, {}, host);
+    const mips1 = target({ flags: 0, abiFlags: null });
+    expect(ghidra.inspectTargetSupport(mips1).status).toBe("supported");
+    const resolved = await ghidra.resolveAnalysisProfile(mips1);
+    if (!resolved.ok) throw resolved.error;
+    expect(resolved.value.profile?.parameters).toMatchObject({
+      mips_support_lane: "elf32-exec-arch0-legacy-pinned-v1",
+      mips_abi_basis: "inferred-o32-assumption-v1",
+      language_id: "MIPS:LE:32:default",
+      compiler_spec_id: "default",
+      language_selection: "provider-pinned-v1",
+    });
+    expect(
+      ghidra.inspectTargetSupport(
+        target({ flags: 0x10000000, abiFlags: null }),
+      ),
+    ).toMatchObject({
+      status: "unsupported",
+      reason: expect.stringContaining("EF_MIPS_ARCH_0"),
+    });
+  });
+
   it("requires an inspected absence; a merely unobserved record stays refused", () => {
     const ghidra = new GhidraProvider(config, silentLogger, {}, host);
     const withRecord = target({ flags: 0x50000001 }) as BinaryTarget & {

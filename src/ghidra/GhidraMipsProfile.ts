@@ -34,7 +34,8 @@ export const ghidraMipsLanguageOverride = (
 /**
  * Recordless legacy ELF32 MIPS admission: the header declares no ABI field and
  * carries no ABI flags record, so o32 is an analysis assumption derived from
- * ELF32/ET_EXEC structure, never a declared fact. Ghidra's header
+ * ELF32/ET_EXEC structure, never a declared fact. MIPS-I (EF_MIPS_ARCH_0) uses
+ * the same pin as recordless MIPS32 and MIPS32r2. Ghidra's header
  * auto-selection picks a 64-bit language for exactly these files, so the lane
  * pins the 32-bit language instead.
  */
@@ -53,7 +54,7 @@ const hasLegacyMipsHeaderShape = (target: BinaryTarget): boolean => {
     // recordless relocatable objects stay outside the inferred-o32 assumption.
     target.mips.elfClass === 32 &&
     target.mips.type === MIPS_ET_EXEC &&
-    (arch === 0x50000000 || arch === 0x70000000) &&
+    (arch === 0 || arch === 0x50000000 || arch === 0x70000000) &&
     (flags & 0x0000f000) === 0 &&
     (flags & 0x20) === 0 &&
     // EF_MIPS_ABI_ON32 (bit 0x40) declares the old n32 ABI; it is not an
@@ -129,8 +130,8 @@ export const ghidraMipsUnsupportedReason = (
   if ((metadata.flags & 0x00ff0000) !== 0)
     return "Machine-specific MIPS variants, including PSP Allegrex, need a separately supported processor profile.";
   const arch = metadata.flags & 0xf0000000;
-  if (arch !== 0x70000000 && arch !== 0x50000000)
-    return "This Ghidra MIPS lane requires EF_MIPS_ARCH_32R2 or a recordless legacy EF_MIPS_ARCH_32 header; other ISA revisions need separate verification.";
+  if (arch !== 0 && arch !== 0x70000000 && arch !== 0x50000000)
+    return "This Ghidra MIPS lane requires EF_MIPS_ARCH_32R2, a recordless legacy EF_MIPS_ARCH_32 header, or a recordless EF_MIPS_ARCH_0 header; other ISA revisions need separate verification.";
   const recordlessShape =
     (metadata.flags & 0x0000f000) === 0 &&
     (metadata.flags & 0x20) === 0 &&
@@ -371,7 +372,9 @@ export const ghidraMipsProfileParameters = (
       : {}),
     instruction_context_evidence: "per-address-isa-mode-v1",
     mips_support_lane: legacy
-      ? "elf32-exec-arch32-legacy-pinned-v1"
+      ? (target.mips.flags & 0xf0000000) === 0
+        ? "elf32-exec-arch0-legacy-pinned-v1"
+        : "elf32-exec-arch32-legacy-pinned-v1"
       : isGhidraMips16SharedTarget(target)
         ? "elf32-dyn-o32-arch32r2-mips16-local-rel32-v1"
         : target.mips.type === MIPS_ET_REL
