@@ -10,6 +10,7 @@ import { jsonValueSchema } from "../domain/jsonValue.js";
 import { nativeCallObservationInputSchema } from "../domain/native/nativeCallObservation.js";
 import type { Logger } from "pino";
 import type { CliInstance } from "./types.js";
+import { localPathStringSchema } from "../domain/localPath.js";
 
 const OPERATION = "observe_native_calls";
 
@@ -23,7 +24,7 @@ export const registerNativeCallCommands = (
     description:
       "Launch a Mach-O under LLDB and record entries into selected functions or Objective-C methods",
     args: z.object({
-      path: z.string().describe("Mach-O or app path"),
+      path: localPathStringSchema.describe("Mach-O or app path"),
       inputJson: z
         .string()
         .describe(

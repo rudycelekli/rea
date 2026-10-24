@@ -140,3 +140,49 @@ cliTest(
     });
   },
 );
+
+cliTest(
+  "rejects empty core native analysis selections before they can become the working directory",
+  async ({ cli }) => {
+    const cwd = await createTestTempDirectory("rea-empty-core-native-path-");
+    const selections = [
+      ["inspect", ""],
+      ["decompile", "", "0x1000"],
+      ["xrefs", "", "0x1000"],
+      ["trace", "", "query"],
+      ["function", "", "0x1000"],
+      ["instructions", "", "0x1000"],
+      ["search", "", "pattern"],
+      ["decompile-all", "", "--output", "unread"],
+      ["search-bytes", "", "90"],
+      ["inspect-native-load-image", ""],
+      ["read-bytes", "", "0x1000"],
+      ["address-to-file-offset", "", "0x1000"],
+      ["trace-native-values", "", "main"],
+      ["inspect-native-data-type", ""],
+      ["inspect-native-instruction", "", "0x1000"],
+      ["resolve-native-call-targets", "", "0x1000"],
+      ["inspect-native-dispatch-metadata", ""],
+      ["inspect-native-api", "", "main"],
+      ["annotate-native-function", "", "main"],
+      [
+        "observe-native-calls",
+        "",
+        '{"breakpoints":[{"kind":"function","name":"main"}]}',
+      ],
+    ];
+    for (const selection of selections) {
+      const result = await runFileCli(cli, {
+        arguments: [...selection, "--json"],
+        cwd,
+      });
+      expect(result.exitCode, selection[0]).toBe(1);
+      expect(result.json, selection[0]).toMatchObject({
+        code: "VALIDATION_ERROR",
+        fieldErrors: expect.arrayContaining([
+          expect.objectContaining({ path: "path", code: "too_small" }),
+        ]),
+      });
+    }
+  },
+);

@@ -16,6 +16,7 @@ import {
   snapshotSelectionOption,
 } from "./options.js";
 import type { CliInstance } from "./types.js";
+import { localPathStringSchema } from "../domain/localPath.js";
 
 /** Register native load-image, memory, and annotation CLI commands. */
 export const registerCoreNativeCommands = (
@@ -27,7 +28,7 @@ export const registerCoreNativeCommands = (
   cli.command(CLI_COMMANDS.searchBytes, {
     description: "Find masked byte patterns in initialized provider memory",
     args: z.object({
-      path: z.string().describe("Local executable path"),
+      path: localPathStringSchema.describe("Local executable path"),
       pattern: z.string().describe("Hexadecimal byte pairs with ?? wildcards"),
     }),
     options: z.object({
@@ -67,7 +68,9 @@ export const registerCoreNativeCommands = (
   cli.command(CLI_COMMANDS.inspectNativeLoadImage, {
     description:
       "Verify loaded native bytes, source mappings, relocations and entry",
-    args: z.object({ path: z.string().describe("Local executable path") }),
+    args: z.object({
+      path: localPathStringSchema.describe("Local executable path"),
+    }),
     options: z.object({
       ...nativeOpenOptionFields,
     }),
@@ -84,7 +87,7 @@ export const registerCoreNativeCommands = (
   cli.command(CLI_COMMANDS.readBytes, {
     description: "Read exact provider memory bytes at one analysis address",
     args: z.object({
-      path: z.string().describe("Local executable path"),
+      path: localPathStringSchema.describe("Local executable path"),
       address: z.string().describe("Exact provider memory address"),
     }),
     options: z.object({
@@ -109,7 +112,7 @@ export const registerCoreNativeCommands = (
   cli.command(CLI_COMMANDS.addressToFileOffset, {
     description: "Resolve an analysis address to its original file byte offset",
     args: z.object({
-      path: z.string().describe("Local executable path"),
+      path: localPathStringSchema.describe("Local executable path"),
       address: z.string().describe("Exact provider memory address"),
     }),
     options: z.object({
@@ -128,7 +131,9 @@ export const registerCoreNativeCommands = (
   cli.command(CLI_COMMANDS.traceNativeValues, {
     description: "Trace bounded native def-use and call dependencies",
     args: z.object({
-      path: z.string().describe("Local native executable or app path"),
+      path: localPathStringSchema.describe(
+        "Local native executable or app path",
+      ),
       procedure: z
         .string()
         .describe("Explicit native procedure symbol or address"),
@@ -206,7 +211,9 @@ export const registerCoreNativeCommands = (
   cli.command(CLI_COMMANDS.inspectNativeDataType, {
     description: "Inspect one recovered database type or typed data object",
     args: z.object({
-      path: z.string().describe("Local native executable or app path"),
+      path: localPathStringSchema.describe(
+        "Local native executable or app path",
+      ),
     }),
     options: z.object({
       type: z.string().optional().describe("Exact database type category path"),
@@ -238,7 +245,9 @@ export const registerCoreNativeCommands = (
           ? "Inspect one native instruction with decoded operand facts"
           : "Resolve one static native call site",
       args: z.object({
-        path: z.string().describe("Local native executable or app path"),
+        path: localPathStringSchema.describe(
+          "Local native executable or app path",
+        ),
         address: z.string().describe("Exact native address"),
       }),
       options: z.object({
@@ -268,7 +277,9 @@ const registerNativeDispatchMetadataCommand = (
   cli.command(CLI_COMMANDS.inspectNativeDispatchMetadata, {
     description: "Inspect typed Objective-C and Swift dispatch metadata",
     args: z.object({
-      path: z.string().describe("Target path used to bind the result evidence"),
+      path: localPathStringSchema.describe(
+        "Target path used to bind the result evidence",
+      ),
     }),
     options: z.object({
       maxRecords: nativeDispatchMetadataInputSchema.shape.max_records.describe(
@@ -363,7 +374,7 @@ const registerNativeApiCommand = (
   cli.command(CLI_COMMANDS.inspectNativeApi, {
     description: `Reconstruct one native function API boundary with evidence. ${addressOrProcedureGuidance} ${equalSelectorGuidance}`,
     args: z.object({
-      path: z.string().describe("App or program path"),
+      path: localPathStringSchema.describe("App or program path"),
       address: z
         .string()
         .optional()
@@ -406,7 +417,7 @@ const registerAnnotationCommand = (
   cli.command(CLI_COMMANDS.annotateNativeFunction, {
     description: "Edit function annotations and return refreshed analysis",
     args: z.object({
-      path: z.string().describe("Local executable path"),
+      path: localPathStringSchema.describe("Local executable path"),
       procedure: z
         .string()
         .describe("Exact function entry address or unique name"),
