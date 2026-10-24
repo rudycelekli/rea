@@ -13,6 +13,7 @@ import { projectAnalysisError } from "../domain/analysisErrorProjection.js";
 import { AnalysisInputError } from "../domain/analysisErrorCore.js";
 import { projectInputIssues } from "../domain/inputIssueProjection.js";
 import { safeParseJson } from "../domain/safeJson.js";
+import { localPathStringSchema } from "../domain/localPath.js";
 import { nativeUiScenarioInputSchema } from "../domain/native/nativeUiObservation.js";
 import {
   nativeCommandTimeoutField,
@@ -196,7 +197,9 @@ const registerNativeCommands = (
   ] as const) {
     cli.command(command, {
       description: `Run ${tool} without launching Hopper`,
-      args: z.object({ path: z.string().describe("Mach-O or app path") }),
+      args: z.object({
+        path: localPathStringSchema.describe("Mach-O or app path"),
+      }),
       options: z.object({
         nativeCommandTimeoutMs: nativeCommandTimeoutField,
       }),
@@ -215,7 +218,9 @@ const registerNativeCommands = (
   }
   cli.command(CLI_COMMANDS.inspectPlist, {
     description: "Parse app plist metadata without launching Hopper",
-    args: z.object({ path: z.string().describe("App or Mach-O path") }),
+    args: z.object({
+      path: localPathStringSchema.describe("App or Mach-O path"),
+    }),
     options: z.object({
       relativePath: z
         .string()

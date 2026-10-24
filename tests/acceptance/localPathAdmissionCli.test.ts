@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect } from "vitest";
 
@@ -58,6 +58,44 @@ cliTest(
             code: "too_small",
             missing: false,
           }),
+        ]),
+      });
+    }
+  },
+);
+
+cliTest(
+  "rejects empty Apple artifact selections inside an app bundle working directory",
+  async ({ cli }) => {
+    const bundle = join(
+      await createTestTempDirectory("rea-empty-apple-path-"),
+      "Selected.app",
+    );
+    await mkdir(join(bundle, "Contents"), { recursive: true });
+    await writeFile(
+      join(bundle, "Contents", "Info.plist"),
+      '<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>com.example.selected</string></dict></plist>',
+    );
+    for (const command of [
+      "inspect-plist",
+      "inspect-asset-catalog",
+      "decode-interface-builder",
+      "inspect-keyed-archive",
+      "trace-dylib-resolution",
+      "inspect-macho",
+      "inspect-signature",
+      "list-architectures",
+      "extract-artifact",
+    ]) {
+      const result = await runFileCli(cli, {
+        arguments: [command, "", "--json"],
+        cwd: bundle,
+      });
+      expect(result.exitCode, command).toBe(1);
+      expect(result.json, command).toMatchObject({
+        code: "VALIDATION_ERROR",
+        fieldErrors: expect.arrayContaining([
+          expect.objectContaining({ path: "path", code: "too_small" }),
         ]),
       });
     }
