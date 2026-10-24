@@ -7,6 +7,12 @@ import { inspectPeResourcesInputSchema } from "./native/peResources.js";
 import { inspectElectronFusesInputSchema } from "./electron/electronFuses.js";
 import { inspectPacketCaptureInputSchema } from "./captures/packetCapture.js";
 import { decodeSignalRecordingInputSchema } from "./signals/signalRecording.js";
+import { inspectAppleIpsInputSchema } from "./native/appleIps.js";
+import { inspectElfNotesInputSchema } from "./native/elfNotes.js";
+import { inspectKernelModuleInputSchema } from "./native/kernelModule.js";
+import { inspectByteEntropyInputSchema } from "./native/byteEntropy.js";
+import { inspectDevicetreeInputSchema } from "./firmware/devicetree.js";
+import { inspectPythonPycInputSchema } from "./python/pythonPyc.js";
 
 it.each([
   ["Go binary", inspectGoBinaryInputSchema],
@@ -17,6 +23,12 @@ it.each([
   ["Electron fuses", inspectElectronFusesInputSchema],
   ["packet capture", inspectPacketCaptureInputSchema],
   ["signal recording", decodeSignalRecordingInputSchema],
+  ["Apple IPS", inspectAppleIpsInputSchema],
+  ["ELF notes", inspectElfNotesInputSchema],
+  ["kernel module", inspectKernelModuleInputSchema],
+  ["byte entropy", inspectByteEntropyInputSchema],
+  ["devicetree", inspectDevicetreeInputSchema],
+  ["Python pyc", inspectPythonPycInputSchema],
 ] as const)(
   "reports relative %s paths as a path format issue",
   (_name, schema) => {

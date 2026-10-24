@@ -85,6 +85,12 @@ const standaloneAnalysisCases = (
       name: "decode_signal_recording",
       input: { decoders: "uart:rx=RX:baudrate=9600" },
     },
+    { name: "inspect_apple_ips", input: {} },
+    { name: "inspect_elf_notes", input: {} },
+    { name: "inspect_kernel_module", input: {} },
+    { name: "inspect_byte_entropy", input: {} },
+    { name: "inspect_devicetree", input: {} },
+    { name: "inspect_python_pyc", input: { detail: "complete" } },
   ].map(({ name, input }) => ({
     name,
     field: "path",
@@ -192,6 +198,28 @@ const inputCases = (
       },
     ),
     ...standaloneAnalysisCases(absolute, relative),
+    ...["path", "output_directory"].map((field) =>
+      pathCase(
+        "recover_javascript_sources",
+        field,
+        { path: absolute, output_directory: absolute },
+        { path: absolute, output_directory: absolute, [field]: relative },
+      ),
+    ),
+    pathCase(
+      "recover_javascript_sources",
+      "additional_paths",
+      {
+        path: absolute,
+        output_directory: absolute,
+        additional_paths: [absolute],
+      },
+      {
+        path: absolute,
+        output_directory: absolute,
+        additional_paths: [relative],
+      },
+    ),
     ...["executable_path", "application_path", "application_root"].map(
       (field) =>
         pathCase(

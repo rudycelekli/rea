@@ -1,4 +1,4 @@
-import { isAbsolute, resolve } from "node:path";
+import { resolve } from "node:path";
 
 import {
   AnalysisCancelledError,
@@ -42,27 +42,6 @@ export class JavaScriptRecoveryService {
         analysisInputErrorFromIssues(OPERATION, parsed.error.issues, input, {
           cause: parsed.error,
         }),
-      );
-    const invalidPaths = (["path", "output_directory"] as const).filter(
-      (field) => !isAbsolute(parsed.data[field]),
-    );
-    const invalidAdditional = (parsed.data.additional_paths ?? []).filter(
-      (additional) => !isAbsolute(additional),
-    );
-    if (invalidPaths.length > 0 || invalidAdditional.length > 0)
-      return err(
-        new AnalysisInputError(OPERATION, undefined, [
-          ...invalidPaths.map((field) => ({
-            path: [field],
-            reason: "invalid_format" as const,
-            message: `${field} must be an absolute filesystem path on this host.`,
-          })),
-          ...invalidAdditional.map((additional) => ({
-            path: ["additional_paths"],
-            reason: "invalid_format" as const,
-            message: `additional_paths entries must be absolute filesystem paths on this host: ${additional}`,
-          })),
-        ]),
       );
     const selectedInputs = new Set(
       [parsed.data.path, ...(parsed.data.additional_paths ?? [])].map((path) =>
