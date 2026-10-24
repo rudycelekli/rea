@@ -92,6 +92,16 @@ export const observeMzWindowsHeader = (
   const signature = windowsHeaderSignature(available);
   if (signature !== "other" && signature !== "unobserved")
     return { state: "declared", offset, signature };
+  // In the original 64-byte DOS layout, e_lfanew shares otherwise unused
+  // header padding. Relocations that finish before that padding establish the
+  // DOS ownership of the field unless a Windows signature confirms otherwise.
+  if (
+    headerBytes === 64 &&
+    relocationCount > 0 &&
+    tableStart >= 28 &&
+    tableStart + relocationCount * 4 <= 60
+  )
+    return { state: "absent" };
   if (headerBytes === 0 || headerBytes >= 64) {
     const remaining = fileSize - offset;
     const needsMore =

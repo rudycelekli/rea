@@ -285,7 +285,7 @@ describe("MZ Windows header observations", () => {
     ).toEqual({ state: "declared", offset, signature: "PE" });
   });
 
-  it("preserves DOS facts while leaving an unsigned Windows pointer unresolved", () => {
+  it("keeps original DOS header padding from becoming a Windows pointer", () => {
     const bytes = Buffer.alloc(128);
     bytes.write("MZ", 0, "ascii");
     bytes.writeUInt16LE(128, 2);
@@ -308,22 +308,17 @@ describe("MZ Windows header observations", () => {
         relocationTableOffset: 28,
       },
     });
-    expect(evidence.windowsHeader).toEqual({
-      state: "candidate",
-      offset: 0x44434241,
-      signature: "unobserved",
-    });
-    expect(parseExecutableHeader(bytes, "x64")).toEqual({
-      ok: false,
-      error: "MZ Windows new-header candidate is unresolved",
+    expect(evidence.windowsHeader).toEqual({ state: "absent" });
+    expect(parseExecutableHeader(bytes, "x64")).toMatchObject({
+      ok: true,
+      value: { format: "dos-mz", architecture: "x86" },
     });
 
     bytes.writeUInt32LE(0xfffffff0, 60);
-    expect(parseMzHeaderEvidence(bytes).windowsHeader).toEqual({
-      state: "candidate",
-      offset: 0xfffffff0,
-      signature: "unobserved",
+    expect(parseMzHeaderEvidence(bytes).windowsHeader).toEqual({ state: "absent" });
+    expect(parseExecutableHeader(bytes, "x64")).toMatchObject({
+      ok: true,
+      value: { format: "dos-mz", architecture: "x86" },
     });
-    expect(parseExecutableHeader(bytes, "x64")).toMatchObject({ ok: false });
   });
 });
