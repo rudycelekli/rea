@@ -173,8 +173,13 @@ const decodeDirectoryString = (
       return decodeUtf32Be(node.content, budget);
     case 0x1e:
       return decodeUtf16Be(node.content, budget);
+    // NumericString and VisibleString carry ASCII subsets; Russian qualified
+    // certificates, for example, encode INN and OGRN subject attributes as
+    // NumericString.
     case 0x0c:
+    case 0x12:
     case 0x13:
+    case 0x1a:
     case 0x16:
     case 0x17:
     case 0x18:

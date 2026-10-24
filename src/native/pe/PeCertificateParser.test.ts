@@ -650,6 +650,24 @@ it.each([
   },
 );
 
+it.each([
+  ["NumericString", 0x12, "7707083893"],
+  ["VisibleString", 0x1a, "Visible Signer"],
+] as const)(
+  "decodes %s certificate names as ASCII directory text",
+  (_encoding, tag, text) => {
+    const certificate = parseCertificate(
+      readAsn1(
+        namedCertificate(
+          directoryName(der(0x0c, Buffer.from("Issuer"))),
+          directoryName(der(tag, Buffer.from(text))),
+        ),
+      ),
+    );
+    expect(certificate.subject.text).toBe(`commonName=${text}`);
+  },
+);
+
 it("decodes BMPString names once and shares the decoded-byte budget", () => {
   const bmp = (text: string) => {
     const content = Buffer.alloc(text.length * 2);
