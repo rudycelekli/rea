@@ -166,7 +166,7 @@ export const publishFirmwareExtraction = async (context: {
         context.signal,
       );
       files.push({
-        relative_path: entry.relativePath,
+        relative_path: written.relativePath,
         path: join(tree.outputRoot, written.relativePath),
         size: entry.size,
         sha256,
