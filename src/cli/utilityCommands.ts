@@ -13,6 +13,7 @@ import { projectAnalysisError } from "../domain/analysisErrorProjection.js";
 import { AnalysisInputError } from "../domain/analysisErrorCore.js";
 import { projectInputIssues } from "../domain/inputIssueProjection.js";
 import { safeParseJson } from "../domain/safeJson.js";
+import { localPathStringSchema } from "../domain/localPath.js";
 import { nativeUiScenarioInputSchema } from "../domain/native/nativeUiObservation.js";
 import {
   nativeCommandTimeoutField,
@@ -94,7 +95,7 @@ const registerNativeUiCommands = (
   runProviderAnalysis: DirectAnalysis["runProviderAnalysis"],
 ): void => {
   const pathArgument = z.object({
-    path: z.string().describe("Local native executable or app path"),
+    path: localPathStringSchema.describe("Local native executable or app path"),
   });
   cli.command(CLI_COMMANDS.observeNativeUi, {
     description:

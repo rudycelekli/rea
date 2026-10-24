@@ -16,6 +16,7 @@ import {
   snapshotSelectionOption,
 } from "./options.js";
 import type { CliInstance } from "./types.js";
+import { localPathStringSchema } from "../domain/localPath.js";
 
 /** Register native load-image, memory, and annotation CLI commands. */
 export const registerCoreNativeCommands = (
@@ -306,7 +307,9 @@ const registerNativeUiActionCommand = (
     description:
       "Trace a compiled UI action selector to its native handler and direct callees",
     args: z.object({
-      path: z.string().describe("Target path used to bind the result evidence"),
+      path: localPathStringSchema.describe(
+        "Target path used to bind the result evidence",
+      ),
       action: z
         .string()
         .min(1)

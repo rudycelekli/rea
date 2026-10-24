@@ -42,7 +42,9 @@ const registerInspectManagedArtifact = (
   cli.command(CLI_COMMANDS.inspectManagedArtifact, {
     description: "Inspect PE/CLI identity without loading target code",
     args: z.object({
-      path: z.string().describe("Managed PE executable or assembly path"),
+      path: localPathStringSchema.describe(
+        "Managed PE executable or assembly path",
+      ),
     }),
     run: ({ args }) =>
       logCliCommand(logger, "inspect-managed-artifact", () =>
@@ -60,7 +62,9 @@ const registerInspectManagedMembers = (
     description:
       "Inspect PE/CLI metadata members, signatures, CIL anchors, and ldstr string literals without loading target code",
     args: z.object({
-      path: z.string().describe("Managed PE executable or assembly path"),
+      path: localPathStringSchema.describe(
+        "Managed PE executable or assembly path",
+      ),
     }),
     options: z.object({
       type: managedMembersInputSchema.shape.type_names.describe(
@@ -107,7 +111,9 @@ const registerInspectManagedNativeBoundaries = (
     description:
       "Inspect PE/CLI PInvoke and native implementation boundary declarations without loading target code",
     args: z.object({
-      path: z.string().describe("Managed PE executable or assembly path"),
+      path: localPathStringSchema.describe(
+        "Managed PE executable or assembly path",
+      ),
     }),
     run: ({ args }) =>
       logCliCommand(logger, "inspect-managed-native-boundaries", () =>
@@ -122,8 +128,12 @@ const registerInspectManagedNativeBoundaries = (
 };
 
 const compareManagedMemberArgs = z.object({
-  leftPath: z.string().describe("Baseline managed PE executable or assembly"),
-  rightPath: z.string().describe("Candidate managed PE executable or assembly"),
+  leftPath: localPathStringSchema.describe(
+    "Baseline managed PE executable or assembly",
+  ),
+  rightPath: localPathStringSchema.describe(
+    "Candidate managed PE executable or assembly",
+  ),
 });
 
 const registerCompareManagedMembers = (

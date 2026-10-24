@@ -140,3 +140,50 @@ cliTest(
     });
   },
 );
+
+cliTest(
+  "rejects empty managed and native UI selections before they can become the working directory",
+  async ({ cli }) => {
+    const cwd = await createTestTempDirectory("rea-empty-managed-ui-path-");
+    const window = ["--pid", "1", "--window-id", "1"];
+    const selections = [
+      { arguments: ["inspect-managed-artifact", ""], field: "path" },
+      { arguments: ["inspect-managed-members", ""], field: "path" },
+      { arguments: ["inspect-managed-native-boundaries", ""], field: "path" },
+      {
+        arguments: ["compare-managed-members", "", "unread"],
+        field: "leftPath",
+      },
+      {
+        arguments: ["compare-managed-members", "unread", ""],
+        field: "rightPath",
+      },
+      { arguments: ["observe-native-ui", "", ...window], field: "path" },
+      {
+        arguments: [
+          "capture-native-ui-scenario",
+          "",
+          ...window,
+          "--steps",
+          '[{"kind":"wait","milliseconds":1}]',
+        ],
+        field: "path",
+      },
+      { arguments: ["trace-native-ui-action", "", "save:"], field: "path" },
+    ];
+    for (const selection of selections) {
+      const label = `${selection.arguments[0]} ${selection.field}`;
+      const result = await runFileCli(cli, {
+        arguments: [...selection.arguments, "--json"],
+        cwd,
+      });
+      expect(result.exitCode, label).toBe(1);
+      expect(result.json, label).toMatchObject({
+        code: "VALIDATION_ERROR",
+        fieldErrors: expect.arrayContaining([
+          expect.objectContaining({ path: selection.field, code: "too_small" }),
+        ]),
+      });
+    }
+  },
+);
