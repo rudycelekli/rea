@@ -495,7 +495,8 @@ const TEXT_FIELDS = /^(?:segname|sectname|string #\d+)$/u;
  * separator space on each side of the recorded string, whose own leading and
  * trailing whitespace belongs to the Mach-O value.
  */
-const OFFSET_STRING_FIELD = /^(name|path) (.* \(offset \d+\))$/u;
+const OFFSET_STRING_FIELD =
+  /^(name|path|umbrella|sub_umbrella|sub_library|client) (.* \(offset \d+\))$/u;
 
 /**
  * otool prints segment and section names as `<key> %.16s`: one separator

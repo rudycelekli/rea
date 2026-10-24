@@ -322,6 +322,46 @@ it.each([
   },
 );
 
+it.each([
+  ["surrounding spaces", "  Umbrella  "],
+  ["surrounding tabs", "\tUmbrella\t"],
+  ["numeric name", "123"],
+  ["ordinary control", "Umbrella"],
+])(
+  "preserves sub-framework and client string whitespace: %s",
+  (_label, value) => {
+    const load = parseOtoolLoadCommands(
+      withOtoolMachHeader(
+        [
+          "Load command 0",
+          "          cmd LC_SUB_FRAMEWORK",
+          "      cmdsize 24",
+          `     umbrella ${value} (offset 12)`,
+          "Load command 1",
+          "          cmd LC_SUB_UMBRELLA",
+          "      cmdsize 24",
+          ` sub_umbrella ${value} (offset 12)`,
+          "Load command 2",
+          "          cmd LC_SUB_LIBRARY",
+          "      cmdsize 24",
+          `  sub_library ${value} (offset 12)`,
+          "Load command 3",
+          "          cmd LC_SUB_CLIENT",
+          "      cmdsize 24",
+          `       client ${value} (offset 12)`,
+          "",
+        ].join("\n"),
+      ),
+    );
+    expect(load.commands.map((command) => command.fields)).toMatchObject([
+      { umbrella: `${value} (offset 12)` },
+      { sub_umbrella: `${value} (offset 12)` },
+      { sub_library: `${value} (offset 12)` },
+      { client: `${value} (offset 12)` },
+    ]);
+  },
+);
+
 it("normalizes legacy version-minimum commands into build metadata", () => {
   const load = parseOtoolLoadCommands(
     withOtoolMachHeader(
