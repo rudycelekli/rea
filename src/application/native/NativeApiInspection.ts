@@ -98,10 +98,12 @@ const availableResidualUnknowns = (
         `Which source-level case values correspond to every target dispatched at ${table.dispatch_address}?`,
       );
   }
+  // Name the parameter ordinal: equal low-confidence types are distinct
+  // questions, and the set below must not merge them.
   for (const value of [boundary.return_type, ...boundary.parameters]) {
     if (value.confidence === "low")
       unknowns.push(
-        `Can the inferred ${value.role} type ${value.data_type} be confirmed with imported metadata or an ABI probe?`,
+        `Can the inferred ${value.role === "parameter" ? `parameter ${String(value.ordinal)}` : value.role} type ${value.data_type} be confirmed with imported metadata or an ABI probe?`,
       );
   }
   return [...new Set(unknowns)];

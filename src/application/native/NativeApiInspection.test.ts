@@ -112,6 +112,34 @@ describe("native API inspection", () => {
     );
   });
 
+  it("keeps one type question per low-confidence parameter", () => {
+    const boundary = functionDossierSchema.parse(
+      ghidraFunctionDossier(),
+    ).native_api;
+    if (boundary === null || boundary.available !== true)
+      throw new TypeError("Ghidra native API fixture is unavailable");
+    const parameter = {
+      ...boundary.return_type,
+      role: "parameter" as const,
+      data_type: "undefined8",
+      confidence: "low" as const,
+    };
+    const dossier = functionDossierSchema.parse({
+      ...functionDossierSchema.parse(ghidraFunctionDossier()),
+      native_api: {
+        ...boundary,
+        parameters: [
+          { ...parameter, ordinal: 0, name: "param_1" },
+          { ...parameter, ordinal: 1, name: "param_2" },
+        ],
+      },
+    });
+    const unknowns = projectNativeApiInspection(dossier).residual_unknowns;
+    expect(
+      unknowns.filter((unknown) => unknown.includes("undefined8")),
+    ).toHaveLength(2);
+  });
+
   it("rejects boundary types placed in the wrong ABI role", () => {
     const boundary = functionDossierSchema.parse(
       ghidraFunctionDossier(),
