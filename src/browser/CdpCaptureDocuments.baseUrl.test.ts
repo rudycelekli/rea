@@ -259,6 +259,72 @@ describe("prefixed XHTML form destinations", () => {
       },
     ]);
   });
+
+  it("identifies prefixed BASE and LINK elements by XHTML namespace", () => {
+    const strings = [
+      `${origin}/root/page.xhtml`,
+      `${origin}/root/assets/`,
+      "#document",
+      "h:html",
+      "h:head",
+      "h:base",
+      "h:link",
+      "x:link",
+      "",
+      "xmlns:h",
+      "http://www.w3.org/1999/xhtml",
+      "xmlns:x",
+      "urn:example:feed",
+      "href",
+      "assets/",
+      "tool",
+      "rel",
+      "mcp",
+    ];
+    const result = captureDom(
+      {
+        strings,
+        documents: [
+          {
+            documentURL: 0,
+            baseURL: 1,
+            nodes: {
+              nodeType: [9, 1, 1, 1, 1, 1],
+              nodeName: [2, 3, 4, 5, 6, 7],
+              nodeValue: [8, 8, 8, 8, 8, 8],
+              parentIndex: [-1, 0, 1, 2, 2, 2],
+              attributes: [
+                [],
+                [9, 10, 11, 12],
+                [],
+                [13, 14],
+                [16, 17, 13, 15],
+                [16, 17, 13, 15],
+              ],
+            },
+          },
+        ],
+      },
+      new Set([origin]),
+      input,
+    ).next();
+    if (!result.done) throw new Error("Unexpected SVG identity query");
+    expect(
+      result.value.urls.map(({ node_index, url }) => [node_index, url]),
+    ).toEqual([
+      [3, `${origin}/root/assets/`],
+      [4, `${origin}/root/assets/tool`],
+      [5, `${origin}/root/assets/tool`],
+    ]);
+    expect(result.value.agentHints).toEqual([
+      {
+        mechanism: "dom_link_rel",
+        declaration: "mcp",
+        url: `${origin}/root/assets/tool`,
+        trust: "page-declared-untrusted",
+      },
+    ]);
+  });
 });
 
 describe("empty form destinations with a document base URL", () => {

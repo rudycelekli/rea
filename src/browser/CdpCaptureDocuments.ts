@@ -379,7 +379,10 @@ export function* captureDom(
         options: {
           attributes,
           // The BASE element itself resolves against the document fallback URL.
-          baseUrl: nodeName.toLowerCase() === "base" ? documentUrl : baseUrl,
+          baseUrl:
+            htmlTagName(nodeName, domElement) === "base"
+              ? documentUrl
+              : baseUrl,
           documentUrl,
           nodeIndex,
           nodeName,
@@ -694,6 +697,21 @@ const hrefAttributeValue = (
   return options.xmlDocument ? options.xlinkHref : pairs.get("xlink:href");
 };
 
+/** HTML element local name, or "" for elements outside the XHTML namespace. */
+const htmlTagName = (
+  nodeName: string,
+  element: Pick<
+    DomMetadataOptions,
+    "xmlDocument" | "elementNamespace" | "localName"
+  >,
+): string =>
+  element.xmlDocument === false
+    ? nodeName.toLowerCase()
+    : element.xmlDocument === true &&
+        element.elementNamespace === XHTML_NAMESPACE
+      ? (element.localName ?? "")
+      : "";
+
 const domMetadata = (
   options: DomMetadataOptions,
 ): {
@@ -707,10 +725,8 @@ const domMetadata = (
     nodeIndex,
     nodeName,
     allowedOrigins,
-    xmlDocument,
-    elementNamespace,
-    localName,
   } = options;
+  const tagName = htmlTagName(nodeName, options);
   const pairs = new Map<string, string>();
   for (const [name, value] of attributes) {
     // HTML keeps the first declaration; SVG/XML spelling stays case-sensitive.
@@ -720,12 +736,6 @@ const domMetadata = (
   for (const attribute of domUrlAttributes) {
     const value = hrefAttributeValue(pairs, attribute, options);
     if (value === undefined) continue;
-    const tagName =
-      xmlDocument === false
-        ? nodeName.toLowerCase()
-        : xmlDocument === true && elementNamespace === XHTML_NAMESPACE
-          ? (localName ?? "")
-          : "";
     // Chrome strips HTML whitespace for FORM.action, while submit controls
     // use the document URL only for an exactly empty formaction attribute.
     const usesDocumentUrl =
@@ -754,7 +764,7 @@ const domMetadata = (
     .filter((value) => agentRelValues.includes(value));
   const href = urls.find(({ attribute }) => attribute === "href")?.url ?? null;
   const agentHints =
-    nodeName.toLowerCase() === "link" && rel.length > 0
+    tagName === "link" && rel.length > 0
       ? rel.map((declaration) => ({
           mechanism: "dom_link_rel" as const,
           declaration,
