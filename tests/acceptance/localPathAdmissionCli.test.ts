@@ -20,6 +20,8 @@ const fileCommands = [
   "inspect-byte-entropy",
   "inspect-pe-resources",
   "inspect-pe-certificates",
+  "inspect-pe-imports",
+  "inspect-apple-ips",
   "inspect-native-exports",
   "inspect-binary-layout",
   "inspect-recorded-crash",
