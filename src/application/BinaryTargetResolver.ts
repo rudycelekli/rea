@@ -12,6 +12,7 @@ import {
 } from "./RegularFileRead.js";
 import type { ArtifactResourceScope } from "../artifacts/ArtifactResourceScope.js";
 import { ArtifactReaderFailure } from "../artifacts/ArtifactReader.js";
+import { fileHasDmgImageSignature } from "../artifacts/DmgImageSignature.js";
 import { jsonValueSchema } from "../domain/jsonValue.js";
 import { projectAnalysisError } from "../domain/analysisErrorProjection.js";
 import { constants, type Stats } from "node:fs";
@@ -667,14 +668,12 @@ const detectArtifactFormat = async (
     return "pkg";
   if (lower.endsWith(".dmg")) {
     throwIfTargetResolutionCancelled(signal);
-    const size = initial.size;
-    if (size >= 512) {
-      const trailer = Buffer.alloc(4);
-      const read = await handle.read(trailer, 0, trailer.length, size - 512);
-      throwIfTargetResolutionCancelled(signal);
-      if (read.bytesRead === 4 && trailer.equals(Buffer.from("koly")))
-        return "dmg";
-    }
+    if (
+      await fileHasDmgImageSignature(handle, initial.size, () =>
+        throwIfTargetResolutionCancelled(signal),
+      )
+    )
+      return "dmg";
   }
   // XML property lists can use archive-specific suffixes such as .archive.
   // The named-format check above keeps .js, .map, and .asar classifications.

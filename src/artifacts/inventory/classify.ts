@@ -6,6 +6,7 @@ import type { Stats } from "node:fs";
 import type { StableRegularFileDescriptor } from "../../filesystem/RegularFile.js";
 import type { OwnedFileHandle } from "../../filesystem/OwnedFileHandle.js";
 
+import { fileHasDmgImageSignature } from "../DmgImageSignature.js";
 import { containsPyInstallerArchive } from "../pyinstaller/CArchiveLayout.js";
 import { decodeNodeSeaBlob } from "../nodeSea/NodeSeaBlob.js";
 import { locateNodeSea, readNodeSeaBlob } from "../nodeSea/NodeSeaLocation.js";
@@ -185,7 +186,9 @@ const classifyRootFormat = async (
     return "pkg";
   if (
     lower.endsWith(".dmg") &&
-    (await hasKolyTrailer(handle, archiveBytes, signal))
+    (await fileHasDmgImageSignature(handle, archiveBytes, () =>
+      abortIfNeeded(signal),
+    ))
   )
     return "dmg";
   if (await locateGodotPck(handle, archiveBytes, signal, evidence.prefix))
@@ -337,25 +340,3 @@ const readRootMzWindowsHeaderSignature = async (
   return { offset, bytes: window.subarray(0, available) };
 };
 
-const hasKolyTrailer = async (
-  handle: FileHandle,
-  size: number,
-  signal?: AbortSignal,
-): Promise<boolean> => {
-  if (size < 512) return false;
-  const trailer = Buffer.alloc(4);
-  let bytes = 0;
-  while (bytes < trailer.length) {
-    abortIfNeeded(signal);
-    const read = await handle.read(
-      trailer,
-      bytes,
-      trailer.length - bytes,
-      size - 512 + bytes,
-    );
-    abortIfNeeded(signal);
-    if (read.bytesRead === 0) return false;
-    bytes += read.bytesRead;
-  }
-  return trailer.equals(Buffer.from("koly"));
-};

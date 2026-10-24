@@ -60,12 +60,15 @@ interface NativeDmgFailureClassification {
    * localized text; the cause stays unknown unless the target cannot be opened.
    */
   readonly unrecognizedImage?: boolean;
+  /** hdiutil reported that the image stores no checksum, so none was verified. */
+  readonly absentChecksum?: boolean;
 }
 
 class NativeDmgCommandFailure extends ArtifactReaderFailure {
   readonly processNotStarted: boolean;
   readonly verifyDiagnostic: string | undefined;
   readonly unrecognizedImage: boolean;
+  readonly absentChecksum: boolean;
   readonly exitCode: number | null;
 
   constructor(
@@ -94,6 +97,7 @@ class NativeDmgCommandFailure extends ArtifactReaderFailure {
     this.processNotStarted = options?.processNotStarted ?? false;
     this.verifyDiagnostic = failure.verifyDiagnostic;
     this.unrecognizedImage = failure.unrecognizedImage ?? false;
+    this.absentChecksum = failure.absentChecksum ?? false;
     this.exitCode = options?.exitCode ?? null;
   }
 }
@@ -162,6 +166,7 @@ export class NativeDmgArtifactReader implements ArtifactReader {
   #closePromise: Promise<void> | undefined;
   readonly #activeDirectoryOperations = new Set<Promise<unknown>>();
   #verificationProbeHandle: OwnedFileHandle | undefined;
+  #absentChecksum = false;
 
   constructor(
     private readonly path: string,
@@ -181,6 +186,11 @@ export class NativeDmgArtifactReader implements ArtifactReader {
     options?: ArtifactTraversalOptions,
   ): AsyncIterable<ArtifactEntry> {
     await this.#ensureAttached(signal);
+    if (this.#absentChecksum)
+      options?.onCoverage?.({
+        status: "complete",
+        limitations: [ABSENT_CHECKSUM_LIMITATION],
+      });
     const directory = this.#directory;
     if (directory === undefined)
       throw new ArtifactReaderFailure("unavailable", "DMG is not attached");
@@ -498,6 +508,10 @@ export class NativeDmgArtifactReader implements ArtifactReader {
       } catch (cause: unknown) {
         if (!(cause instanceof NativeDmgCommandFailure)) throw cause;
         this.#provenance.push(command(arguments_, ["read"], cause.exitCode));
+        if (cause.absentChecksum) {
+          this.#absentChecksum = true;
+          return;
+        }
         if (cause.unrecognizedImage) {
           const unreadable = await this.#isUnreadableTarget(signal, cause);
           this.#throwIfVerificationCancelled(signal);
@@ -852,6 +866,9 @@ const verifyFailureDiagnostic = (
 
 // hdiutil localizes the trailing failure reason but not its own status lines.
 const INVALID_CHECKSUM_LINE = /^hdiutil: verify: checksum of ".*" is INVALID$/u;
+const ABSENT_CHECKSUM_LINE = /^hdiutil: verify: ".*" has no checksum\.$/u;
+const ABSENT_CHECKSUM_LIMITATION =
+  "The disk image has no stored checksum; hdiutil verify did not verify one.";
 const UNRECOGNIZED_IMAGE_LINE =
   /^hdiutil: verify: unable to recognize ".*" as a disk image\./u;
 
@@ -862,6 +879,9 @@ const untranslatedVerifyFailure = (
   const lines = outputLines(stdout, stderr);
   if (lines.some((line) => INVALID_CHECKSUM_LINE.test(line)))
     return { reason: "integrity" };
+  // A raw UDRW image stores no checksum. That is not a mismatch or a refusal.
+  if (lines.some((line) => ABSENT_CHECKSUM_LINE.test(line)))
+    return { reason: "unavailable", absentChecksum: true };
   // Malformed, unreadable and transiently busy targets all produce this line;
   // only the localized reason distinguishes them, so the cause stays unknown.
   if (lines.some((line) => UNRECOGNIZED_IMAGE_LINE.test(line)))

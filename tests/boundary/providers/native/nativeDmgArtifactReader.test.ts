@@ -30,6 +30,8 @@ import {
   type NativeDmgHost,
 } from "../../../../src/artifacts/NativeDmgArtifactReader.js";
 import { scanCanonicalArtifactInventoryInScope } from "../../../../src/artifacts/inventory/scanCanonical.js";
+import { parseBinaryTarget } from "../../../../src/application/BinaryTargetResolver.js";
+import { scanCanonicalArtifactInventory } from "../../../fixtures/artifactInventory.js";
 
 const createAttachedReader = async (
   path: string,
@@ -1997,5 +1999,112 @@ describe("DMG detach recheck", () => {
     await expect(
       readFile(join(state.mountRoot, "Fixture", "hello.txt")),
     ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+});
+
+/** Protective MBR plus a GPT header, the bytes of an hdiutil UDRW image. */
+const rawReadWriteDiskImage = (): Buffer => {
+  const bytes = Buffer.alloc(520);
+  bytes[510] = 0x55;
+  bytes[511] = 0xaa;
+  bytes.write("EFI PART", 512, "ascii");
+  return bytes;
+};
+
+describe("raw UDRW disk images", () => {
+  it("inventories a mountable raw image that has no checksum and does not treat the filename as proof", async () => {
+    const root = await createTestTempDirectory("rea-dmg-udrw-");
+    const path = join(root, "fixture.dmg");
+    await writeFile(path, rawReadWriteDiskImage());
+    const blank = join(root, "blank.dmg");
+    await writeFile(blank, Buffer.alloc(1024));
+
+    expect(await parseBinaryTarget(path)).toMatchObject({
+      ok: true,
+      value: { kind: "archive", format: "dmg" },
+    });
+    expect(await parseBinaryTarget(blank)).toMatchObject({
+      ok: false,
+      error: { constraint: "file_format_rejected" },
+    });
+
+    const mount = createMountFixture();
+    let attached = false;
+    let mountPoint: string | undefined;
+    const host: NativeDmgHost = {
+      async run(arguments_) {
+        if (arguments_[0] === "verify")
+          return {
+            stdout: "",
+            stderr: `hdiutil: verify: ${JSON.stringify(path)} has no checksum.\n`,
+            exitCode: 1,
+          };
+        if (arguments_[0] === "info")
+          return {
+            stdout:
+              attached && mountPoint !== undefined
+                ? infoPlist(path, [
+                    { "dev-entry": "/dev/disk9", "mount-point": mountPoint },
+                  ])
+                : emptyInfoPlist,
+            exitCode: 0,
+          };
+        if (arguments_[0] === "detach") {
+          attached = false;
+          return { stdout: "", exitCode: 0 };
+        }
+        if (arguments_[0] !== "attach")
+          return { stdout: "", exitCode: 0 };
+        const mounted = await mount.createVolume(
+          arguments_,
+          "raw verifier fixture\n",
+        );
+        mountPoint = mounted.mountPoint;
+        attached = true;
+        return {
+          stdout: attachPlist([
+            { "dev-entry": "/dev/disk9", "mount-point": mountPoint },
+          ]),
+          exitCode: 0,
+        };
+      },
+    };
+
+    const snapshot = await scanCanonicalArtifactInventory(
+      path,
+      {},
+      (_imagePath, format) => {
+        if (format !== "dmg")
+          throw new Error(`expected dmg classification, received ${format}`);
+        return new NativeDmgArtifactReader(path, {}, host);
+      },
+    );
+    expect(snapshot.manifest.root_format).toBe("dmg");
+    expect(snapshot.occurrences.map(({ logical_path }) => logical_path)).toEqual(
+      expect.arrayContaining([
+        "fixture.dmg/Fixture",
+        "fixture.dmg/Fixture/hello.txt",
+      ]),
+    );
+    expect(snapshot.provenance).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          arguments: ["verify", path],
+          exit_code: 1,
+        }),
+      ]),
+    );
+    expect(
+      snapshot.provenance.some(
+        (command) =>
+          command.arguments[0] === "verify" && command.exit_code === 0,
+      ),
+    ).toBe(false);
+    expect(snapshot.limitations).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("no stored checksum"),
+      ]),
+    );
+    expect(snapshot.coverage.status).toBe("complete");
   });
 });
