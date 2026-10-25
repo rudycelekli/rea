@@ -83,6 +83,19 @@ describe("members a created field derives from", () => {
     );
     expect(body.fixed).toEqual([{ member: "url", sent: url }]);
   });
+
+  it("reads a constant's neighbours around an echoed member as whole code points", () => {
+    const sent = "rea-capture-1";
+    const fixed = (snapshot: string) =>
+      create({ id: 9, sent, snapshot }, { sent }).fixed;
+    // An astral letter or digit joins the echoed text into a longer word.
+    expect(fixed(`𐐀${sent}`)).toEqual([]);
+    expect(fixed(`${sent}𐐁`)).toEqual([]);
+    expect(fixed(`𝟙${sent}𝟚`)).toEqual([]);
+    expect(fixed(`Ж${sent}Ж`)).toEqual([]);
+    // An emoji delimits it, so the constant still holds it.
+    expect(fixed(`🔗${sent}🔗`)).toEqual([{ member: "sent", sent }]);
+  });
 });
 
 it(
