@@ -1,4 +1,4 @@
-import { readFile, stat as statPath } from "node:fs/promises";
+import { readFile, readlink, stat as statPath } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import { setTimeout as delay } from "node:timers/promises";
 import {
@@ -11,8 +11,10 @@ import {
 import { parseLinuxProcessStat } from "./LinuxProcessStat.js";
 import {
   linuxEnvironmentRestriction,
+  linuxUserNamespaceRestriction,
   parseLinuxProcessIds,
   type LinuxEnvironmentRestriction,
+  type LinuxUserNamespaceObservation,
 } from "./LinuxProcessStatus.js";
 import { AnalysisCapabilityUnavailableError } from "../domain/analysisErrorCore.js";
 
@@ -944,6 +946,26 @@ export const readProcessOwnershipFacts = async (
   return facts;
 };
 
+/** Read one user-namespace identity. Absence is unknown, not a foreign namespace. */
+const readLinuxUserNamespace = async (
+  path: string,
+  signal: AbortSignal | undefined,
+): Promise<LinuxUserNamespaceObservation> => {
+  try {
+    return {
+      state: "readable",
+      id: await readlink(path, signal === undefined ? undefined : { signal }),
+    };
+  } catch (cause: unknown) {
+    if (isExpectedAbort(cause, signal)) throw cause;
+    const code =
+      cause instanceof Error && "code" in cause ? cause.code : undefined;
+    return code === "EACCES" || code === "EPERM"
+      ? { state: "withheld" }
+      : { state: "unknown" };
+  }
+};
+
 const isExpectedAbort = (
   cause: unknown,
   signal: AbortSignal | undefined,
@@ -1020,7 +1042,11 @@ export const createSystemProcessOwnershipHost = (
     ProcessOwnershipHost["processIdentities"]
   > = async (processes, signal, credentialPids) => {
     if (processes.length === 0) return new Map();
-    if (platform === "linux")
+    if (platform === "linux") {
+      const callerUserNamespace =
+        credentialPids !== undefined && credentialPids.size > 0
+          ? await readLinuxUserNamespace("/proc/self/ns/user", signal)
+          : undefined;
       return new Map<number, ProcessIdentityObservation>(
         await Promise.all(
           processes.map(async ({ pid }) => {
@@ -1105,13 +1131,24 @@ export const createSystemProcessOwnershipHost = (
                 void cause;
               }
               signal?.throwIfAborted();
-              const environmentRestriction = linuxEnvironmentRestriction({
+              const credentialRestriction = linuxEnvironmentRestriction({
                 uids,
                 gids: parseLinuxProcessIds(status, "Gid"),
                 procfsOwnerUid,
                 callerUid: process.geteuid?.(),
                 callerGid: process.getegid?.(),
               });
+              const environmentRestriction =
+                credentialRestriction ??
+                (callerUserNamespace?.state === "readable"
+                  ? linuxUserNamespaceRestriction(
+                      callerUserNamespace,
+                      await readLinuxUserNamespace(
+                        `/proc/${String(pid)}/ns/user`,
+                        signal,
+                      ),
+                    )
+                  : undefined);
 
               let afterStatus: string;
               try {
@@ -1193,6 +1230,7 @@ export const createSystemProcessOwnershipHost = (
           }),
         ),
       );
+    }
     if (darwinTokens === undefined) return new Map();
     try {
       return await darwinTokens.identities(processes, signal);

@@ -8,11 +8,19 @@ const filesystem = vi.hoisted(() => ({
   stat: vi.fn(async () => {
     throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
   }),
+  readlink: vi.fn(async () => {
+    throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+  }),
 }));
 
 vi.mock("node:fs/promises", async (importOriginal) => {
   const original = await importOriginal<typeof import("node:fs/promises")>();
-  return { ...original, readFile: filesystem.readFile, stat: filesystem.stat };
+  return {
+    ...original,
+    readFile: filesystem.readFile,
+    stat: filesystem.stat,
+    readlink: filesystem.readlink,
+  };
 });
 
 import {
@@ -159,6 +167,78 @@ it.each([
     else expect(identity).toHaveProperty("environmentRestriction", expected);
   },
 );
+
+it.each([
+  ["another user namespace", "user:[4026532500]", "user-namespace"],
+  ["the same user namespace", "user:[4026531837]", undefined],
+] as const)(
+  "withholds an otherwise inspectable process in %s",
+  async (_name, targetNamespace, expected) => {
+    const host = createSystemProcessOwnershipHost("linux", {});
+    filesystem.readFile
+      .mockResolvedValueOnce(procStat(100))
+      .mockResolvedValueOnce(
+        "Uid:\t1000\t1000\t1000\t1000\nGid:\t1000\t1000\t1000\t1000\n",
+      )
+      .mockResolvedValueOnce(procStat(100));
+    filesystem.stat.mockResolvedValueOnce({ uid: 1000 } as never);
+    filesystem.readlink.mockImplementation(async (path: string) => {
+      if (path === "/proc/self/ns/user") return "user:[4026531837]";
+      if (path === "/proc/42/ns/user") return targetNamespace;
+      throw filesystemError("ENOENT");
+    });
+
+    try {
+      const identity = (
+        await withCaller(1000, 1000, async () =>
+          host.processIdentities?.([entry], undefined, new Set([entry.pid])),
+        )
+      )?.get(entry.pid);
+      expect(identity).toMatchObject({ state: "readable", effectiveUid: 1000 });
+      if (expected === undefined)
+        expect(identity).not.toHaveProperty("environmentRestriction");
+      else expect(identity).toHaveProperty("environmentRestriction", expected);
+    } finally {
+      filesystem.readlink.mockReset();
+      filesystem.readlink.mockImplementation(async () => {
+        throw filesystemError("ENOENT");
+      });
+    }
+  },
+);
+
+it("withholds an otherwise inspectable process whose user namespace cannot be read", async () => {
+  const host = createSystemProcessOwnershipHost("linux", {});
+  filesystem.readFile
+    .mockResolvedValueOnce(procStat(100))
+    .mockResolvedValueOnce(
+      "Uid:\t1000\t1000\t1000\t1000\nGid:\t1000\t1000\t1000\t1000\n",
+    )
+    .mockResolvedValueOnce(procStat(100));
+  filesystem.stat.mockResolvedValueOnce({ uid: 1000 } as never);
+  filesystem.readlink.mockImplementation(async (path: string) => {
+    if (path === "/proc/self/ns/user") return "user:[4026531837]";
+    throw filesystemError("EACCES");
+  });
+
+  try {
+    const identity = (
+      await withCaller(1000, 1000, async () =>
+        host.processIdentities?.([entry], undefined, new Set([entry.pid])),
+      )
+    )?.get(entry.pid);
+    expect(identity).toMatchObject({
+      state: "readable",
+      effectiveUid: 1000,
+      environmentRestriction: "user-namespace",
+    });
+  } finally {
+    filesystem.readlink.mockReset();
+    filesystem.readlink.mockImplementation(async () => {
+      throw filesystemError("ENOENT");
+    });
+  }
+});
 
 it("keeps native identity when status UID is unavailable", async () => {
   const host = createSystemProcessOwnershipHost("linux", {});

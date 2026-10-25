@@ -2,6 +2,7 @@ import { expect, it } from "vitest";
 
 import {
   linuxEnvironmentRestriction,
+  linuxUserNamespaceRestriction,
   parseLinuxProcessIds,
 } from "./LinuxProcessStatus.js";
 
@@ -56,6 +57,46 @@ it.each([
   "derives the kernel environment restriction for %s",
   (_name, facts, expected) => {
     expect(linuxEnvironmentRestriction({ ...caller, ...facts })).toBe(expected);
+  },
+);
+
+it.each([
+  [
+    "a different user namespace",
+    { state: "readable", id: "user:[1]" },
+    { state: "readable", id: "user:[2]" },
+    "user-namespace",
+  ],
+  [
+    "a namespace link the kernel withholds",
+    { state: "readable", id: "user:[1]" },
+    { state: "withheld" },
+    "user-namespace",
+  ],
+  [
+    "the caller's own namespace",
+    { state: "readable", id: "user:[1]" },
+    { state: "readable", id: "user:[1]" },
+    undefined,
+  ],
+  [
+    "a namespace link that cannot be compared",
+    { state: "readable", id: "user:[1]" },
+    { state: "unknown" },
+    undefined,
+  ],
+  [
+    "an unreadable caller namespace",
+    { state: "unknown" },
+    { state: "readable", id: "user:[2]" },
+    undefined,
+  ],
+] as const)(
+  "derives a user-namespace restriction for %s",
+  (_name, callerNamespace, targetNamespace, expected) => {
+    expect(
+      linuxUserNamespaceRestriction(callerNamespace, targetNamespace),
+    ).toBe(expected);
   },
 );
 
