@@ -4,6 +4,7 @@ import {
   parseAmStartOutput,
   parsePackageChangeOutput,
   parseDumpsysPackageOutput,
+  parseServiceListOutput,
   parseWmDensityOutput,
   parseWindowFocusOutput,
 } from "./AdbShellOutput.js";
@@ -394,6 +395,24 @@ describe("parseWmDensityOutput", () => {
 
 const starting =
   "Starting: Intent { act=android.intent.action.MAIN cmp=com.example/.Main }";
+
+describe("parseServiceListOutput", () => {
+  it("retains unrecognized service rows verbatim", () => {
+    const rows = [" \tunexpected service row  \t", "  \tsecond row"];
+    const { services, unparsedLines } = parseServiceListOutput(
+      [
+        "Found 2 services:",
+        "0\tactivity: [android.app.IActivityManager]",
+        ...rows,
+        "",
+      ].join("\n"),
+    );
+    expect(services).toEqual([
+      { name: "activity", interface: "android.app.IActivityManager" },
+    ]);
+    expect(unparsedLines).toEqual({ sample: rows, total: 2 });
+  });
+});
 
 describe("parseAmStartOutput", () => {
   it("recognizes a CRLF wait-timeout report", () => {

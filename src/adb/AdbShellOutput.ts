@@ -131,7 +131,7 @@ export const parseServiceListOutput = (
       continue;
     const match = SERVICE_LINE.exec(line);
     if (match === null) {
-      if (line.trim() !== "") unparsed.add(line.trim());
+      if (line.trim() !== "") unparsed.add(rawLine);
       continue;
     }
     services.push({
