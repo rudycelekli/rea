@@ -1,6 +1,9 @@
 import { expect, it } from "vitest";
-import { create, toBinary } from "@bufbuild/protobuf";
-import { FileDescriptorSetSchema } from "@bufbuild/protobuf/wkt";
+import { create, toBinary, type MessageInitShape } from "@bufbuild/protobuf";
+import {
+  FileDescriptorSetSchema,
+  type DescriptorProtoSchema,
+} from "@bufbuild/protobuf/wkt";
 import { decodeProtobufWire, ProtobufBudget } from "./ProtobufWire.js";
 import { decodeProtobufBody } from "./ProtobufBody.js";
 import { ProtobufSchema } from "./ProtobufSchema.js";
@@ -588,4 +591,96 @@ it("distinguishes missing selected message types from malformed and duplicate de
       message: expect.stringContaining("Duplicate field number 1"),
     },
   });
+});
+
+it.each<[string, MessageInitShape<typeof DescriptorProtoSchema>, string]>([
+  [
+    "duplicate field names",
+    {
+      field: [
+        { name: "value", number: 1, type: 5, label: 1 },
+        { name: "value", number: 2, type: 9, label: 1 },
+      ],
+    },
+    "Duplicate field name value",
+  ],
+  [
+    "a field and nested type with one qualified name",
+    {
+      field: [
+        {
+          name: "Child",
+          number: 1,
+          type: 11,
+          typeName: ".M.Child",
+          label: 1,
+        },
+      ],
+      nestedType: [{ name: "Child" }],
+    },
+    "Duplicate fully qualified type name",
+  ],
+])("rejects %s in one descriptor message", async (_, message, reason) => {
+  const bytes = toBinary(
+    FileDescriptorSetSchema,
+    create(FileDescriptorSetSchema, {
+      file: [
+        {
+          name: "field-names.proto",
+          syntax: "proto3",
+          messageType: [{ name: "M", ...message }],
+        },
+      ],
+    }),
+  );
+  expect(
+    await ProtobufSchema.read(bytes, "M", new ProtobufBudget(), same),
+  ).toMatchObject({
+    ok: false,
+    error: {
+      kind: "malformed-descriptor",
+      field: "descriptor_set_path",
+      message: expect.stringContaining(reason),
+    },
+  });
+});
+
+it("keeps one local field name in different messages", async () => {
+  const bytes = toBinary(
+    FileDescriptorSetSchema,
+    create(FileDescriptorSetSchema, {
+      file: [
+        {
+          name: "field-names.proto",
+          syntax: "proto3",
+          messageType: [
+            {
+              name: "M",
+              field: [
+                { name: "value", number: 1, type: 5, label: 1 },
+                {
+                  name: "child",
+                  number: 2,
+                  type: 11,
+                  typeName: ".M.Child",
+                  label: 1,
+                },
+              ],
+              nestedType: [
+                {
+                  name: "Child",
+                  field: [{ name: "value", number: 1, type: 9, label: 1 }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    }),
+  );
+  expect(
+    (
+      await readSchema(bytes, "M", new ProtobufBudget(), same)
+    ).message.fields.map(({ name }) => name),
+  ).toEqual(["value", "child"]);
 });

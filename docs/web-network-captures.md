@@ -183,7 +183,7 @@ remain explicit. Descriptor admission rejects duplicate field numbers within
 each message, including nested messages and oneof fields, before schema
 annotation. This does not reject repeated occurrences in captured wire bytes
 or reuse of a number in a different message. Fully qualified message, enum,
-service and extension names must also identify one declaration across the
+service, extension and field names must also identify one declaration across the
 descriptor set, including nested and synthetic map-entry messages. Different
 packages or enclosing messages may reuse a local type name. Schema-admission
 failures retain the partial capture Evidence and its original artifact identity.

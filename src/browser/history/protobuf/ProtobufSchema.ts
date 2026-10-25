@@ -12,6 +12,7 @@ import {
 import {
   FileDescriptorSetSchema,
   FileDescriptorProtoSchema,
+  type DescriptorProto,
   type FileDescriptorProto,
   type FileDescriptorSet,
 } from "@bufbuild/protobuf/wkt";
@@ -81,6 +82,33 @@ const admitRegistryDescriptor = async (
     registryNames.add(qualified);
     return qualified;
   };
+  const admitFields = (
+    message: DescriptorProto,
+    qualified: string,
+  ): ProtobufSchemaAdmissionFailure | undefined => {
+    budget.charge(message.field.length * 32);
+    const fieldNumbers = new Set<number>();
+    for (const field of message.field) {
+      chargeQualifiedName(field.name, qualified);
+      // Fields share the message scope with nested types and extensions.
+      const name = `${qualified}.${field.name}`;
+      if (registryNames.has(name))
+        return {
+          kind: "malformed-descriptor",
+          field: "descriptor_set_path",
+          message: `Duplicate field name ${field.name} in descriptor message ${message.name}`,
+        };
+      registryNames.add(name);
+      if (fieldNumbers.has(field.number))
+        return {
+          kind: "malformed-descriptor",
+          field: "descriptor_set_path",
+          message: `Duplicate field number ${field.number} in descriptor message ${message.name}`,
+        };
+      fieldNumbers.add(field.number);
+    }
+    return undefined;
+  };
   for (const file of descriptor.file) {
     await budget.checkpoint();
     budget.charge(file.name.length * 8 + 128);
@@ -118,18 +146,8 @@ const admitRegistryDescriptor = async (
       const { message, prefix } = stack.pop()!;
       const qualified = admitTypeName(message.name, prefix);
       if (qualified === null) return err(duplicateType);
-      budget.charge(message.field.length * 32);
-      const fieldNumbers = new Set<number>();
-      for (const field of message.field) {
-        chargeQualifiedName(field.name, qualified);
-        if (fieldNumbers.has(field.number))
-          return err({
-            kind: "malformed-descriptor",
-            field: "descriptor_set_path",
-            message: `Duplicate field number ${field.number} in descriptor message ${message.name}`,
-          });
-        fieldNumbers.add(field.number);
-      }
+      const fieldFailure = admitFields(message, qualified);
+      if (fieldFailure !== undefined) return err(fieldFailure);
       for (const extension of message.extension)
         if (admitTypeName(extension.name, qualified) === null)
           return err(duplicateType);
