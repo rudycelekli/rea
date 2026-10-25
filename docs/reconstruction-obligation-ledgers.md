@@ -20,7 +20,8 @@ open or failed.
 Original process authority requires observed `controlled-replay` Evidence with
 a supported process-capture provider and a valid capture payload. A matching
 operation or predicate alone does not establish that authority, including for
-reviewed obligations and manifest original cases.
+generated and reviewed obligations and manifest original cases. A generated
+lifecycle obligation from an unqualified capture remains a `candidate`.
 
 Every fixture and verifier proof must bind its outcome to the exact owner
 implementation digest and obligation revision being evaluated. See

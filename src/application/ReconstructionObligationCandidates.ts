@@ -228,6 +228,7 @@ const deriveProcessCandidate = (
     );
     return;
   }
+  const state = processReferenceState(evidence);
   addCandidate(candidates, {
     obligation_id: obligationId(
       `process:${capture.manifest.executable_sha256}:${capture.manifest.full_scenario_sha256}`,
@@ -247,11 +248,11 @@ const deriveProcessCandidate = (
       {
         evidence_id: evidence.evidence_id,
         authority: evidence.authority,
-        state: "observed",
+        state,
         location: "/normalized_result",
       },
     ],
-    source_state: "observed",
+    source_state: state,
     observed_cases: observedCases,
     required: true,
     required_case_kinds: ["positive", "negative", "cancellation", "teardown"],
@@ -393,6 +394,13 @@ const graphReference = (
     location,
   };
 };
+
+const processReferenceState = (
+  evidence: Evidence,
+): ReconstructionObligation["authority_references"][number]["state"] =>
+  evidenceSupportsOriginalAuthority(evidence, "process")
+    ? "observed"
+    : "candidate";
 
 const reviewedEvidenceState = (
   evidence: Evidence,

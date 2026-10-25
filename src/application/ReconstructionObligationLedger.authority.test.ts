@@ -110,8 +110,43 @@ const registerOriginalProcessAuthorityCases = (): void => {
   );
 };
 
+const registerGeneratedProcessAuthorityCases = (): void => {
+  it.each([
+    { kind: "controlled capture", defect: null, state: "observed" },
+    { kind: "static authority", defect: "authority", state: "candidate" },
+    { kind: "inferred capture", defect: "confidence", state: "candidate" },
+  ] as const)(
+    "reports generated process authority for $kind",
+    ({ defect, state }) => {
+      const capture = processEvidence();
+      const original = createEvidence(undefined, capture.provider, {
+        predicateType: capture.predicate_type,
+        operation: capture.operation,
+        parameters: {},
+        result: capture.normalized_result,
+        confidence: defect === "confidence" ? "inferred" : "observed",
+        authority:
+          defect === "authority" ? "shipped-artifact" : "controlled-replay",
+      });
+      const obligation = build(request([original])).obligations.find(
+        ({ family }) => family === "packaged-process-lifecycle",
+      );
+      expect(obligation?.source_state).toBe(state);
+      expect(obligation?.authority_references).toEqual([
+        {
+          evidence_id: original.evidence_id,
+          authority: original.authority,
+          state,
+          location: "/normalized_result",
+        },
+      ]);
+    },
+  );
+};
+
 describe("reconstruction obligation ledger", () => {
   registerOriginalProcessAuthorityCases();
+  registerGeneratedProcessAuthorityCases();
 
   it("does not authenticate packaged-process proof with generic replay evidence", () => {
     const capture = processEvidence();
