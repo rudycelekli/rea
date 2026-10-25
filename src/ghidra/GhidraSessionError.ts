@@ -189,6 +189,16 @@ const createGhidraSessionError = (failure: {
 export const isGhidraInputFailureCode = (code: string | undefined): boolean =>
   code === "invalid_request" || code === "not_found" || code === "ambiguous";
 
+/** Rejected requests own their output; an admission refusal never reached the bridge. */
+const isRequestScopedFailure = (
+  kind: GhidraSessionFailureKind,
+  remoteCode: string | undefined,
+): boolean =>
+  kind === "admission" ||
+  (kind === "remote" &&
+    (isGhidraInputFailureCode(remoteCode) ||
+      remoteCode === "invalid_function_name"));
+
 /** Bind session-failure construction to its causal diagnostic scope. */
 export const bindGhidraSessionFailure =
   (
@@ -211,9 +221,7 @@ export const bindGhidraSessionFailure =
       message: redact(message),
       diagnostics: {
         ...diagnostics(
-          kind === "remote" &&
-            (isGhidraInputFailureCode(options.remoteCode) ||
-              options.remoteCode === "invalid_function_name")
+          isRequestScopedFailure(kind, options.remoteCode)
             ? "request"
             : "session",
         ),

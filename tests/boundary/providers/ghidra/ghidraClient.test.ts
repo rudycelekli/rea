@@ -1,4 +1,5 @@
 import { parseConfig } from "../../../../src/config/parseConfig.js";
+import type { BridgeMaxRequestBytes } from "../../../../src/config/bridgeMaxRequestBytes.js";
 import { GhidraProvider } from "../../../../src/ghidra/GhidraProvider.js";
 import { fixtureDosLoadImage } from "../../../../src/ghidra/GhidraLoadImage.fixture.js";
 import { jsonValueSchema } from "../../../../src/domain/jsonValue.js";
@@ -124,6 +125,7 @@ const clientFor = (
     readonly logger?: Logger;
     readonly targetPath?: string;
     readonly targetSha256?: string;
+    readonly bridgeMaxRequestBytes?: BridgeMaxRequestBytes;
   } = {},
 ): GhidraClient => {
   const client = new GhidraClient({
@@ -134,6 +136,9 @@ const clientFor = (
     providerVersion: PROVIDER_VERSION,
     profileDigest: PROFILE_DIGEST,
     startupTimeoutMs: options.startupTimeoutMs ?? 1_000,
+    ...(options.bridgeMaxRequestBytes === undefined
+      ? {}
+      : { bridgeMaxRequestBytes: options.bridgeMaxRequestBytes }),
     ...(options.runId === undefined ? {} : { runId: options.runId }),
     ...(options.logger === undefined ? {} : { logger: options.logger }),
     ...(options.onDiagnostic === undefined
@@ -994,6 +999,46 @@ it("scopes authenticated input-failure diagnostics to the request while retainin
       text: expect.stringContaining("Fixture launcher startup output"),
     },
   });
+});
+
+it("scopes an oversized-request refusal to the request it never sent", async () => {
+  const launcher = new FixtureLauncher("remote_error");
+  const client = clientFor(launcher, {
+    bridgeMaxRequestBytes: { maximumBytes: 8192, source: "setting" },
+  });
+  expect(await client.start()).toMatchObject({ ok: true });
+  const requestsBefore = launcher.requests.length;
+
+  const result = await client.callTool("search_strings", {
+    document: null,
+    pattern: "x".repeat(8192),
+  });
+
+  expect(result).toMatchObject({
+    ok: false,
+    error: {
+      kind: "admission",
+      diagnostics: {
+        diagnostic_scope: "request",
+        target_path: fixturePath,
+        target_sha256: TARGET_SHA256,
+      },
+    },
+  });
+  if (result.ok) throw new Error("Expected oversized request refusal");
+  expect(result.error.diagnostics).not.toHaveProperty("stdout");
+  expect(result.error.diagnostics).not.toHaveProperty("stderr");
+  expect(result.error.diagnostics).not.toHaveProperty("launch_support");
+  expect(launcher.requests).toHaveLength(requestsBefore);
+  expect(client.diagnostics()).toMatchObject({
+    stdout: {
+      text: expect.stringContaining("Fixture launcher startup output"),
+    },
+  });
+  expect(client.isReady()).toBe(true);
+  await expect(
+    client.callTool("list_strings", { document: null }),
+  ).resolves.toMatchObject({ ok: true });
 });
 
 it("retains launcher diagnostics when an input error rejects the startup handshake", async () => {

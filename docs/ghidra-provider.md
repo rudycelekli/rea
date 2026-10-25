@@ -31,7 +31,8 @@ operation-scoped JVM `OutOfMemoryError` observations retain their separate resou
 classification. Automatic kernel or cgroup OOM attribution is not implemented.
 
 After the authenticated startup handshake, rejected inputs (`invalid_request`,
-`not_found`, `ambiguous`, or an invalid function name) use
+`not_found`, `ambiguous`, an invalid function name, or a request refused before
+sending because it exceeds `REA_BRIDGE_MAX_REQUEST_BYTES`) use
 `diagnostics.diagnostic_scope: "request"` when their active output checkpoint is
 available. They preserve the active request's
 `failure_output`, target/profile identity and runtime/log coordinates, while
