@@ -6,6 +6,7 @@ import {
   parsePackageListOutput,
   parsePmPathOutput,
 } from "./AdbDeviceOutput.js";
+import { adbResultSchemas } from "../domain/adb/adbDeviceAnalysis.js";
 
 describe("parseAdbDevicesOutput", () => {
   it("parses emulator, USB, and network devices with their metadata", () => {
@@ -189,6 +190,37 @@ describe("ADB device states", () => {
     ].join("\n");
     const { devices } = parseAdbDevicesOutput(output);
     expect(devices[0]?.transport_id).toBeNull();
+  });
+
+  it("reports zero and unsafe transport_ids as unknown without dropping devices", () => {
+    const output = [
+      "List of devices attached",
+      "emulator-5554          device transport_id:0",
+      "emulator-5556          device transport_id:9007199254740993",
+      `emulator-5558          device transport_id:${"9".repeat(400)}`,
+      "emulator-5560          device transport_id:9007199254740991",
+      "",
+    ].join("\n");
+    const { devices, unparsedLines } = parseAdbDevicesOutput(output);
+    expect(unparsedLines).toEqual({ sample: [], total: 0 });
+    expect(devices.map(({ transport_id }) => transport_id)).toEqual([
+      null,
+      null,
+      null,
+      Number.MAX_SAFE_INTEGER,
+    ]);
+    expect(() =>
+      adbResultSchemas.list_adb_devices.parse({
+        client: {
+          binary_path: "/usr/bin/adb",
+          path_source: "path",
+          version: null,
+          installed_path: null,
+        },
+        devices,
+        may_have_started_adb_server: false,
+      }),
+    ).not.toThrow();
   });
 });
 

@@ -45,6 +45,13 @@ const metadataValue = (remainder: string, key: string): string | null => {
   return match === null ? null : match[1]!;
 };
 
+/** adb numbers transports from 1; other spellings are an unknown transport. */
+const transportIdValue = (text: string | null): number | null => {
+  if (text === null || !/^\d+$/u.test(text)) return null;
+  const value = Number(text);
+  return Number.isSafeInteger(value) && value > 0 ? value : null;
+};
+
 /**
  * Parse `adb devices -l` device lines. The banner, blank lines, and the
  * daemon startup notices adb prints on first use are recognized separately;
@@ -85,10 +92,7 @@ export const parseAdbDevicesOutput = (
     const remainder = match[2]!.slice(state.length);
     const usb = metadataValue(remainder, "usb");
     const transportIdText = metadataValue(remainder, "transport_id");
-    const parsedTransportId =
-      transportIdText === null || !/^\d+$/u.test(transportIdText)
-        ? null
-        : Number(transportIdText);
+    const parsedTransportId = transportIdValue(transportIdText);
     const isEmulator = /^emulator-\d+$/u.test(serial);
     const kind = isEmulator
       ? ("emulator" as const)
