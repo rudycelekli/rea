@@ -1406,6 +1406,34 @@ cliTest.skipIf(process.platform === "win32")(
   },
 );
 
+cliTest.skipIf(process.platform === "win32")(
+  "reports an overlong Ghidra seed name as a filesystem path limit",
+  async ({ cli }) => {
+    const root = await createTestTempDirectory("rea-il2cpp-seeds-name-");
+    const path = join(root, "global-metadata.dat");
+    const binaryPath = join(root, "libil2cpp.so");
+    await writeFile(path, createLinkedIl2cppMetadataFixture().bytes);
+    await writeFile(binaryPath, createElfFixture(createIl2cppBinaryFixture()));
+    const result = await runFileCli(cli, {
+      arguments: [
+        "inspect-il2cpp-metadata",
+        path,
+        "--binary",
+        binaryPath,
+        "--ghidra-seeds",
+        join(root, `${"s".repeat(300)}.tsv`),
+        "--json",
+      ],
+    });
+    expect(result.exitCode).not.toBe(0);
+    expect(result.json).toMatchObject({
+      code: "resource_constraint",
+      category: "resource_constraint",
+      details: { reason: "path-limit", boundary: "filesystem-path" },
+    });
+  },
+);
+
 cliTest(
   "preserves unreadable and recorded-invalid generic method identities through CLI and MCP",
   async ({ cli }) => {

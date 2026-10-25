@@ -76,8 +76,15 @@ export class Il2cppGhidraSeedWriter implements Il2cppSeedWriterPort {
             `--ghidra-seeds ${output.path} has a parent path component that is not a directory; choose an output path inside an existing directory.`,
           ),
         );
+      const pathLimit =
+        cause instanceof Error &&
+        "code" in cause &&
+        cause.code === "ENAMETOOLONG";
       return err(
-        new EvidenceFileError("write", "io", { path: output.path, cause }),
+        new EvidenceFileError("write", pathLimit ? "path-limit" : "io", {
+          path: output.path,
+          cause,
+        }),
       );
     }
   }
