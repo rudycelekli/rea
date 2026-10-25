@@ -1,9 +1,11 @@
+import { createHash } from "node:crypto";
 import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 import { TextReader, Uint8ArrayWriter, ZipWriter } from "@zip.js/zip.js";
 
+import { asarHeaderBytes } from "../../fixtures/asarHeader.js";
 import { fragmentInventoryEvidence } from "../../fixtures/artifactEvidence.js";
 import { createTestTempDirectory } from "../../fixtures/temporaryDirectory.js";
 
@@ -24,8 +26,11 @@ const PROVIDER = {
   version: "1",
 } as const;
 
-const observe = async (path: string) => {
-  const inventory = await inventoryArtifact(path);
+const observe = async (
+  path: string,
+  options: Parameters<typeof inventoryArtifact>[1] = {},
+) => {
+  const inventory = await inventoryArtifact(path, options);
   return createEvidence(
     {
       path,
@@ -790,6 +795,79 @@ describe("duplicate archive occurrence ownership", () => {
       unchanged: 2,
       unknown: 1,
     });
+  });
+});
+
+describe("duplicate path integrity", () => {
+  it("keeps an integrity contradiction on an unpaired duplicate path", async () => {
+    const root = await createTestTempDirectory("rea-artifact-duplicate-hash-");
+    const original = Buffer.from("console.log('ok');\n");
+    const changed = Buffer.from("console.log('no');\n");
+    const digest = createHash("sha256").update(original).digest("hex");
+    const integrity = {
+      algorithm: "SHA256",
+      hash: digest,
+      blockSize: 4 * 1024 * 1024,
+      blocks: [digest],
+    };
+    // NFC and NFD spellings are distinct ASAR keys with one logical path.
+    const archive = (payloads: readonly Buffer[]) =>
+      Buffer.concat([
+        asarHeaderBytes(
+          JSON.stringify({
+            files: Object.fromEntries(
+              payloads.map((payload, index) => [
+                index === 0 ? "caf\u00e9.js" : "cafe\u0301.js",
+                {
+                  size: payload.length,
+                  offset: String(index * original.length),
+                  integrity,
+                },
+              ]),
+            ),
+          }),
+        ),
+        ...payloads,
+      ]);
+    const leftPath = join(root, "left.asar");
+    const rightPath = join(root, "right.asar");
+    await writeFile(leftPath, archive([changed, original]));
+    await writeFile(rightPath, archive([original]));
+    const options = { integrity: { mode: "record-and-continue" } } as const;
+    const [left, right] = await Promise.all([
+      observe(leftPath, options),
+      observe(rightPath, options),
+    ]);
+    expect(
+      parseArtifactInventoryEvidence(left)
+        .inventory.occurrences.filter(
+          ({ logical_path }) => logical_path === "caf\u00e9.js",
+        )
+        .map(({ hash_status }) => hash_status)
+        .sort(),
+    ).toEqual(["mismatched", "verified"]);
+
+    for (const [first, second] of [
+      [left, right],
+      [right, left],
+    ] as const) {
+      const comparison = compareArtifacts(first, second);
+      expect(comparison).toMatchObject({
+        status: "contradiction",
+        summary: { contradiction: 1, unknown: 0 },
+        integrity_mismatch_evidence_ids: [left.evidence_id],
+      });
+      expect(
+        comparison.changes.find(
+          ({ logical_path }) => logical_path === "caf\u00e9.js",
+        ),
+      ).toMatchObject({
+        classification: "contradiction",
+        dimensions: ["integrity"],
+        left_occurrence_id: null,
+        right_occurrence_id: null,
+      });
+    }
   });
 });
 

@@ -258,10 +258,14 @@ const compareOccurrences = (
     const rightMatches = rightByPath.get(path) ?? [];
     if (leftMatches.length > 1 || rightMatches.length > 1) {
       hasAmbiguousDuplicatePaths = true;
+      // Unpaired duplicates still carry any declared/observed mismatch.
+      const contradicted = [...leftMatches, ...rightMatches].some(
+        ({ hash_status }) => hash_status === "mismatched",
+      );
       output.push({
         logical_path: path,
-        classification: "unknown",
-        dimensions: ["availability"],
+        classification: contradicted ? "contradiction" : "unknown",
+        dimensions: [contradicted ? "integrity" : "availability"],
         left_occurrence_id: null,
         right_occurrence_id: null,
         left_artifact_id: null,
