@@ -1,3 +1,4 @@
+import { isMachOFormat } from "../binaryTargetTypes.js";
 import { digestCanonicalValue } from "../canonicalDigest.js";
 import type { Evidence } from "../evidence.js";
 import { machoRuntimeSymbolName } from "../native/machoSymbolName.js";
@@ -27,9 +28,11 @@ export const collectNativeSymbols = (
   let accepted = 0;
   let unsupported = 0;
   for (const observation of observations) {
+    const format = observation.evidence.subject?.format ?? null;
+    // A universal container's selected slice loads through the Mach-O loader.
     moduleFormatsByEvidenceId.set(
       observation.evidence.evidence_id,
-      observation.evidence.subject?.format ?? null,
+      isMachOFormat(format) ? "mach-o" : format,
     );
     if (!observation.supported) {
       unsupported += 1;

@@ -559,8 +559,9 @@ produces no native-name candidates. With a supplied PE native context and
 `auto` includes the Windows Unicode `W` candidate. Other native formats do not
 inherit these Windows defaults. Known ELF and Mach-O contexts use the declared
 entry point without A/W suffixes or Windows stdcall decoration, including when
-the metadata declares an explicit ANSI or Unicode marshalling charset. The
-original charset and calling convention remain unchanged. This follows the
+the metadata declares an explicit ANSI or Unicode marshalling charset. Native
+Evidence from a selected universal Mach-O slice uses the same Mach-O symbol and
+module-name rules as a thin Mach-O image. The original charset and calling convention remain unchanged. This follows the
 [.NET runtime's platform-specific entry-point lookup](https://github.com/dotnet/runtime/blob/v10.0.0/src/coreclr/vm/method.cpp#L3134-L3177).
 Windows name decorations are static inferred candidates;
 exact spelling still suppresses decoration and no runtime binding is proven.

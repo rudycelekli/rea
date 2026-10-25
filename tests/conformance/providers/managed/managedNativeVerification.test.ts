@@ -90,7 +90,7 @@ const nativeEvidenceWithExports = (
 
 const nativeFunctionEvidence = (
   modulePath: string,
-  format: "elf" | "mach-o" | "pe" | "file",
+  format: "elf" | "mach-o" | "mach-o-universal" | "pe" | "file",
   name = "open_native",
 ) => {
   const native = exampleInput().native_observations[0];
@@ -217,6 +217,30 @@ it.each([
     status: "unresolved",
   },
   { flags: 0x300, symbol: "_Example@0", format: "pe", status: "inferred" },
+  {
+    flags: 0x202,
+    symbol: "ExampleA",
+    format: "mach-o-universal",
+    status: "unresolved",
+  },
+  {
+    flags: 0x204,
+    symbol: "ExampleW",
+    format: "mach-o-universal",
+    status: "unresolved",
+  },
+  {
+    flags: 0x300,
+    symbol: "_Example@0",
+    format: "mach-o-universal",
+    status: "unresolved",
+  },
+  {
+    flags: 0x204,
+    symbol: "Example",
+    format: "mach-o-universal",
+    status: "verified",
+  },
   { flags: 0x200, symbol: "ExampleA", format: "file", status: "unresolved" },
   { flags: 0x206, symbol: "ExampleW", format: "file", status: "unresolved" },
   {
@@ -319,6 +343,45 @@ it("keeps Windows name candidates tied to their native Evidence format", () => {
     char_set: "unicode",
   });
 });
+
+it.each(["mach-o", "mach-o-universal"] as const)(
+  "resolves a bare P/Invoke module name to a %s dylib",
+  (format) => {
+    const bytes = buildManagedPeFixture({
+      pinvoke: {
+        mappingFlags: 0x204,
+        importName: "Example",
+        moduleName: "nativehelper",
+      },
+    });
+    const target = managedPeFixtureTarget(bytes);
+    const managed = createEvidence(
+      target,
+      exampleInput().managed_boundaries.provider,
+      {
+        operation: "inspect_managed_native_boundaries",
+        parameters: {},
+        result: inspectManagedNativeBoundariesBytes(bytes, target),
+      },
+    );
+    const result = verifyManagedNativeVerificationSource(
+      readFixtureSource({
+        managed_boundaries: managed,
+        native_observations: [
+          nativeFunctionEvidence(
+            "/fixtures/libnativehelper.dylib",
+            format,
+            "Example",
+          ),
+        ],
+      }),
+    );
+    expect(result.pinvoke_imports[0]).toMatchObject({
+      status: "verified",
+      basis: "exact-function-name",
+    });
+  },
+);
 
 describe("managed/native boundary Evidence identity", () => {
   it("rejects managed boundary Evidence whose subject digest differs from its artifact", () => {
