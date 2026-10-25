@@ -141,6 +141,10 @@ const redactionMarker = (secrets: readonly string[]): string => {
   );
 };
 
+/** Fetch normalizes surrounding HTTP whitespace before sending headers. */
+const wireValue = (value: string): string =>
+  value.replace(/^[ \t\r\n]+|[ \t\r\n]+$/gu, "");
+
 /** Own configured credential interpretation for all IDA error diagnostics. */
 export const createIdaDiagnosticRedactor = (
   config?: IdaConfiguration,
@@ -150,14 +154,11 @@ export const createIdaDiagnosticRedactor = (
   blocks(messages: readonly string[]): string;
   message(prefix: string, ownedBody: string): string;
 }> => {
-  const headers =
-    config !== undefined && "headers" in config
-      ? Object.entries(config.headers)
-      : [];
+  const http = config !== undefined && "headers" in config;
+  const headers = http ? Object.entries(config.headers) : [];
   const values = headers.flatMap(([name, value]) => {
     if (!isIdaAuthenticationHeader(name)) return [];
-    // Fetch normalizes surrounding HTTP whitespace before sending headers.
-    const normalized = value.replace(/^[ \t\r\n]+|[ \t\r\n]+$/gu, "");
+    const normalized = wireValue(value);
     if (normalized.length === 0) return [];
     return [
       value,
@@ -167,9 +168,10 @@ export const createIdaDiagnosticRedactor = (
         : authorizationPayloads(normalized)),
     ];
   });
+  const explicit = idaExplicitSensitiveValues(config);
   const secrets = [
     ...new Set(
-      [...values, ...idaExplicitSensitiveValues(config)].filter(
+      [...values, ...explicit, ...(http ? explicit.map(wireValue) : [])].filter(
         (value) => value.length > 0,
       ),
     ),

@@ -600,3 +600,16 @@ it("redacts explicitly marked registration values without guessing from environm
     "[redacted transport credential] retained",
   );
 });
+
+it("redacts the HTTP-normalized value of explicitly marked headers", () => {
+  const redact = createIdaDiagnosticRedactor({
+    url: "http://localhost:8745/mcp",
+    headers: { "X-Api-Key": " \tmarked-secret\r\n", "X-Input": " retained " },
+    sensitive: { headers: ["x-api-key"], env: [] },
+    mode: "attached",
+    timeoutMs: 1000,
+  }).text;
+  expect(redact("wire=marked-secret; input=retained")).toBe(
+    "wire=[redacted transport credential]; input=retained",
+  );
+});
