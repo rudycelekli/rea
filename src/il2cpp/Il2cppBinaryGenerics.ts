@@ -120,11 +120,12 @@ export function* linkGenericMethodsSteps(
       "this binary keeps no static MetadataRegistration, so genericMethodTable cannot be located",
     );
   const word = (address: bigint) => readPointer(image, address);
+  // Registration counts own four bytes; the next four only align a pointer.
   const count = (address: bigint) => {
-    const value = word(address);
-    return value === null || value > BigInt(GENERIC_TABLE_LIMIT)
+    const value = readUInt32(image, address);
+    return typeof value !== "number" || value > GENERIC_TABLE_LIMIT
       ? null
-      : Number(value);
+      : value;
   };
   // Int32 record fields; null when not file backed or loader-unresolved.
   // readUInt32 refuses plain zero-fill, so a .bss record never reads as index

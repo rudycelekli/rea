@@ -1427,6 +1427,23 @@ it("selects the 27.0 layout by its 12-byte rows and agreeing counts", () => {
   );
 });
 
+it.each([1, 0xff])(
+  "ignores ABI padding byte %d after generic registration counts",
+  (padding) => {
+    const bytes = createIl2cppBinaryFixture({ genericMethods: {} });
+    // genericInstsCount, genericMethodTableCount and methodSpecsCount, then
+    // reversePInvokeWrapperCount, genericMethodPointersCount and
+    // invokerPointersCount of the 104-byte CodeRegistration before 0x600.
+    for (const count of [0x810, 0x820, 0x840, 0x598, 0x5a8, 0x5c0])
+      bytes.fill(padding, count + 4, count + 8);
+    expect(linkGeneric({}, 31, bytes).generic_methods).toEqual(
+      linkGeneric().generic_methods,
+    );
+    bytes.writeUInt32LE(0, 0x5a8);
+    expect(() => linkGeneric({}, 31, bytes)).toThrow(Il2cppBinaryFormatFailure);
+  },
+);
+
 it.each<
   [string, GenericMethodFixtureOptions, 24 | 27 | 31 | 39, string, string]
 >([

@@ -377,7 +377,9 @@ an adjustor thunk index). No layout agreeing fails as
 the result has no rows, and `generic_method_pointers_field`,
 `generic_method_pointers_count` and `generic_method_table_stride` are `null`.
 A table of a few rows can still leave two layouts agreeing, which fails as
-ambiguous rather than picking one. Metadata versions 24 and 39 and builds
+ambiguous rather than picking one. Like `codeGenModulesCount`, the generic
+registration counts own four bytes; the alignment padding before their
+pointers is not read as part of a count. Metadata versions 24 and 39 and builds
 without a static CodeRegistration (`code_gen_modules_field` `null`) or
 MetadataRegistration (`types_field` `null`) fail as
 `generic-methods-unsupported`: for version 24 the type-definition generic
