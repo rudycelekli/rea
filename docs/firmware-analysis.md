@@ -81,7 +81,9 @@ caller argument; failures inside an acquired workspace keep their own cause.
 Published file `relative_path` preserves producer spelling for lineage; `path`
 uses the writer's actual normalized filename. An extracted filename that cannot
 be represented losslessly as UTF-8 fails publication explicitly with its raw
-name bytes in hexadecimal instead of silently omitting the entry.
+name bytes in hexadecimal instead of silently omitting the entry. A symlink
+target that cannot be represented losslessly as UTF-8 fails the same way with
+its raw target bytes instead of a replacement-character spelling.
 
 ## CLI and MCP
 

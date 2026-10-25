@@ -1,4 +1,12 @@
-import { access, chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import {
+  access,
+  chmod,
+  mkdir,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 import { expect, it, vi } from "vitest";
 
@@ -186,6 +194,27 @@ it.skipIf(process.platform !== "linux")(
     });
   },
 );
+
+it("refuses symlink targets that cannot round-trip through UTF-8 instead of replacing their bytes", async () => {
+  const root = await createTestTempDirectory("rea-firmware-raw-link-");
+  await symlink(Buffer.from([0x62, 0x61, 0x64, 0xff]), join(root, "invalid"));
+  // A literal replacement character is a distinct, valid target spelling.
+  await symlink("bad\ufffd", join(root, "literal"));
+  await expect(
+    inventoryFirmwareOutput(root, 0, 10, "extract_firmware"),
+  ).rejects.toMatchObject({
+    _tag: "AnalysisOutputError",
+    diagnostics: { relative_path: "invalid", raw_target_hex: "626164ff" },
+  });
+  await rm(join(root, "invalid"));
+  const [literal] = await inventoryFirmwareOutput(
+    root,
+    0,
+    10,
+    "extract_firmware",
+  );
+  expect(literal).toMatchObject({ kind: "symlink", linkTarget: "bad\ufffd" });
+});
 
 it.each([
   { bytes: 1, files: 10, expected: "max_output_bytes" },

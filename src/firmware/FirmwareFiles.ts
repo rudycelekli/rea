@@ -362,6 +362,28 @@ const firmwareInputFailure = (operation: string, cause?: unknown) => {
   ]);
 };
 
+/** Decode a link target only when its stored bytes round-trip through UTF-8. */
+const readFirmwareLinkTarget = async (
+  path: string,
+  relativePath: string,
+  operation: string,
+): Promise<string> => {
+  const target = decodeDirectoryEntryName(
+    await readlink(path, { encoding: "buffer" }),
+  );
+  if (target.kind === "decoded") return target.name;
+  throw new AnalysisOutputError(
+    operation,
+    "Extracted symlink target cannot be represented losslessly as UTF-8",
+    {
+      diagnostics: {
+        relative_path: relativePath,
+        raw_target_hex: target.rawHex,
+      },
+    },
+  );
+};
+
 /** Inventory private output without following links, enforcing aggregate staging budgets. */
 export const inventoryFirmwareOutput = async (
   root: string,
@@ -436,16 +458,19 @@ export const inventoryFirmwareOutput = async (
       if (stat.isFile()) bytes += stat.size;
       if (bytes > maxBytes)
         throw firmwareStagingLimit(operation, "max_output_bytes", maxBytes);
+      const relativePath = relative(root, path).split(sep).join("/");
       entries.push({
         path,
-        relativePath: relative(root, path).split(sep).join("/"),
+        relativePath,
         size: stat.size,
         kind: stat.isSymbolicLink()
           ? "symlink"
           : stat.isFile()
             ? "file"
             : "special",
-        linkTarget: stat.isSymbolicLink() ? await readlink(path) : null,
+        linkTarget: stat.isSymbolicLink()
+          ? await readFirmwareLinkTarget(path, relativePath, operation)
+          : null,
       });
     }
   }
