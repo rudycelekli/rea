@@ -29,6 +29,7 @@ import { compareUnicodeCodePoints } from "../unicodeCodePointOrder.js";
 import { traverseJavaScriptValueAst } from "./javascriptSemanticTraversal.js";
 import { range } from "./javascriptStaticAnalysisHelpers.js";
 import { semanticBindingAtRead } from "./javascriptSemanticMutationInitializers.js";
+import { semanticOpaqueBindingReadMayHaveChanged } from "./javascriptSemanticOpaqueEffects.js";
 import {
   builtinDataEffectMethod,
   dataEffectLiteralString,
@@ -328,6 +329,8 @@ const resolveChildCandidates = (
       complete = false;
       continue;
     }
+    if (semanticOpaqueBindingReadMayHaveChanged(binding, current, state))
+      complete = false;
     for (const candidate of spawnsByBinding.get(binding.bindingId) ?? [])
       fallback.add(candidate);
     // An alias captures its source at its initializer read, not at the later

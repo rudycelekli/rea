@@ -261,3 +261,33 @@ it("resolves an unconditional assignment before the read in the same function bo
     })),
   );
 });
+
+it("keeps interactions before a direct eval resolved and later ownership uncertain", () => {
+  const ir = analyze(`
+    let child = spawn('old');
+    child.kill();
+    eval("child = { kill() {}, on() {} }");
+    child.kill();
+    child.on('exit', done);
+  `);
+  const [old] = ir.childProcessSpawns;
+  expect(ir.childProcessInteractions).toMatchObject([
+    { linkedProcessIds: [old!.processId], resolution: "complete" },
+    { linkedProcessIds: [old!.processId], resolution: "partial" },
+    { linkedProcessIds: [old!.processId], resolution: "partial" },
+  ]);
+});
+
+it.each([
+  ["indirect eval", '(0, eval)("child = {}");'],
+  [
+    "a different lexical binding",
+    'function other() { let child; eval("child = {}"); } other();',
+  ],
+])("keeps child ownership resolved across %s", (_name, effect) => {
+  const ir = analyze(`let child = spawn('ls'); ${effect} child.kill();`);
+  const [spawned] = ir.childProcessSpawns;
+  expect(ir.childProcessInteractions).toMatchObject([
+    { linkedProcessIds: [spawned!.processId], resolution: "complete" },
+  ]);
+});
