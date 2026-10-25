@@ -1,6 +1,7 @@
 import type { ExecutionOptions } from "../AnalysisProvider.js";
 import type { NativeExportsPort } from "./NativeExportsPort.js";
 import type { AnalysisError } from "../../domain/analysisErrorBase.js";
+import { binaryMetadataArchitecture } from "../../domain/binaryMetadataArchitecture.js";
 import {
   AnalysisCancelledError,
   AnalysisOutputError,
@@ -55,12 +56,14 @@ export class NativeExportsService {
         ),
       );
     const value = report.data;
+    const architecture = binaryMetadataArchitecture(value.architecture);
     return completeProviderEvidence(
       createEvidence(
         {
           path: value.artifact.path,
           format: value.format,
           sha256: value.artifact.sha256,
+          ...(architecture === undefined ? {} : { architecture }),
         },
         this.provider.identity,
         {

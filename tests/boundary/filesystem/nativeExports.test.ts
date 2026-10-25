@@ -53,6 +53,39 @@ describe("native export stable filesystem boundary", () => {
     }
     await service.close();
   });
+
+  const unknownPeMachine = (): Buffer => {
+    const bytes = peExportImage({ functions: [{ rva: 0x2000 }] });
+    bytes.writeUInt16LE(0x01f0, 132);
+    return bytes;
+  };
+
+  it.each([
+    ["PE32 i386", () => peExportImage({ bits: 32 }), "x86"],
+    ["PE32+ AMD64", () => peExportImage({ bits: 64 }), "x86_64"],
+    ["PE unknown COFF machine", unknownPeMachine, null],
+    ["ELF64 x86-64", () => elfExportImage({ symbols: [] }), "x86_64"],
+    ["ELF32 ARM", () => elfExportImage({ bits: 32, symbols: [] }), "arm"],
+    [
+      "ELF unknown machine",
+      () => elfExportImage({ machine: 0x9999, symbols: [] }),
+      null,
+    ],
+  ] as const)(
+    "names the subject architecture from the image header: %s",
+    async (_case, image, architecture) => {
+      const root = await createTestTempDirectory("rea-native-export-arch-");
+      const path = join(root, "image");
+      await writeFile(path, image());
+      const service = createNativeExportsService();
+      const result = await service.inspect({ path });
+      await service.close();
+      if (!result.ok) throw new Error(JSON.stringify(result.error));
+      expect(parseEvidence(result.value).subject?.architecture ?? null).toBe(
+        architecture,
+      );
+    },
+  );
 });
 
 describe("native export encoding and failures", () => {
