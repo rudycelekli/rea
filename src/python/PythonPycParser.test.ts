@@ -1103,6 +1103,50 @@ it("uses the code equality fields for each CPython layout", () => {
   ]);
 });
 
+const magic3571CodeSet = (codes: readonly Buffer[]) => {
+  const frozen = Buffer.concat([
+    Buffer.from([0x3e]),
+    u32(codes.length),
+    ...codes.map((bytecode) => marshalCode("py311", { bytecode })),
+  ]);
+  return root(
+    parse(
+      Buffer.concat([
+        pythonPycHeader(3571),
+        marshalCode("py311", { consts: [frozen] }),
+      ]),
+    ),
+  ).consts[0];
+};
+
+it("treats CPython 3.13.0 LOAD_ATTR cache bytes as equal", () => {
+  const cache = Buffer.alloc(18);
+  const changed = Buffer.from(cache);
+  changed[0] = 1;
+  const word = (opcode: number, arg: number, body: Buffer) =>
+    Buffer.concat([Buffer.from([opcode, arg]), body, Buffer.from([83, 0])]);
+  // Opcode 82 is LOAD_ATTR and carries nine cache units in magic 3571.
+  expect(
+    magic3571CodeSet([
+      word(82, 0, cache),
+      word(82, 0, changed),
+      word(82, 1, cache),
+    ]),
+  ).toEqual({ kind: "frozenset", length: 2 });
+});
+
+it("keeps bytes after opcode 81 distinct for CPython 3.13.0", () => {
+  const tailA = Buffer.alloc(18);
+  const tailB = Buffer.from(tailA);
+  tailB[0] = 1;
+  const word = (body: Buffer) =>
+    Buffer.concat([Buffer.from([81, 0]), body, Buffer.from([83, 0])]);
+  expect(magic3571CodeSet([word(tailA), word(tailB)])).toEqual({
+    kind: "frozenset",
+    length: 2,
+  });
+});
+
 it("keeps the first dictionary key when a later key compares equal", () => {
   const key = (filename: string): Buffer =>
     marshalCode("py311", {

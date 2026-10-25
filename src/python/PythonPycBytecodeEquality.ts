@@ -38,6 +38,8 @@ const inlineCacheProfiles = (
  * 22e65eecaad3f5337862319687047afe9861e1ef (3563), and
  * 52cc4af6ae9002f11605f91b672746c127494efd (3564). Adjacent magics share a
  * profile only where their source changes do not alter cache widths or IDs.
+ * CPython 3.13.0 final (magic 3571) keeps the 3569/3570 ids from
+ * Include/opcode_ids.h: LOAD_ATTR is 82 with nine cache units.
  */
 const INLINE_CACHE_ENTRIES_BY_MAGIC: ReadonlyMap<
   number,
@@ -391,7 +393,7 @@ const INLINE_CACHE_ENTRIES_BY_MAGIC: ReadonlyMap<
     ],
   ),
   ...inlineCacheProfiles(
-    [3569, 3570],
+    [3569, 3570, 3571],
     [
       [5, 1],
       [39, 1],
@@ -403,30 +405,6 @@ const INLINE_CACHE_ENTRIES_BY_MAGIC: ReadonlyMap<
       [72, 1],
       [77, 1],
       [82, 9],
-      [91, 4],
-      [93, 1],
-      [97, 1],
-      [98, 1],
-      [99, 1],
-      [100, 1],
-      [104, 1],
-      [108, 4],
-      [117, 1],
-    ],
-  ),
-  ...inlineCacheProfiles(
-    [3571],
-    [
-      [5, 1],
-      [38, 1],
-      [39, 3],
-      [44, 1],
-      [52, 3],
-      [57, 1],
-      [58, 1],
-      [71, 1],
-      [76, 1],
-      [81, 9],
       [91, 4],
       [93, 1],
       [97, 1],

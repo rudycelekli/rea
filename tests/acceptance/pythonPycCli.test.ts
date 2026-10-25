@@ -126,7 +126,7 @@ cliTest(
       { magic: 3550, opcode: 25, cacheUnits: 1 },
       { magic: 3553, opcode: 25, cacheUnits: 1 },
       { magic: 3564, opcode: 58, cacheUnits: 1 },
-      { magic: 3571, opcode: 81, cacheUnits: 9 },
+      { magic: 3571, opcode: 82, cacheUnits: 9 },
     ];
     for (const { magic, opcode, cacheUnits } of cases) {
       const cache = Buffer.alloc(cacheUnits * 2);
