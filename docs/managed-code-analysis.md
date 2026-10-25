@@ -562,6 +562,9 @@ entry point without A/W suffixes or Windows stdcall decoration, including when
 the metadata declares an explicit ANSI or Unicode marshalling charset. The
 original charset and calling convention remain unchanged. This follows the
 [.NET runtime's platform-specific entry-point lookup](https://github.com/dotnet/runtime/blob/v10.0.0/src/coreclr/vm/method.cpp#L3134-L3177).
+Windows Unicode lookup tries the `W` spelling before the declared name, so when
+both exist in the matching module the `W` export is the inferred candidate
+rather than an exact match; ANSI lookup keeps the declared name first.
 Windows name decorations are static inferred candidates;
 exact spelling still suppresses decoration and no runtime binding is proven.
 The mapping follows [Microsoft's charset guidance](https://learn.microsoft.com/en-us/dotnet/standard/native-interop/charset).

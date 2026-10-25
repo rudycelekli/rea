@@ -249,27 +249,37 @@ const hasModuleIdentity = (symbol: NativeSymbol): boolean =>
     (value) => value !== null && moduleFilename(value, false).length > 0,
   );
 
+type PinvokeSpelling = Pick<
+  PinvokeImport,
+  "import_name" | "char_set" | "call_convention" | "no_mangle"
+>;
+
+// Unix P/Invoke lookup uses the declared entry point directly, regardless of
+// marshalling charset or calling convention. Keep Windows decorations local
+// to PE or an unresolved native platform; metadata flags remain unchanged.
+const windowsDecorations = (
+  managed: PinvokeSpelling,
+  nativeFormat: string | null,
+): boolean =>
+  !managed.no_mangle && nativeFormat !== "elf" && nativeFormat !== "mach-o";
+
+/** Windows Unicode lookup tries the W suffix before the declared name. */
+const wideSuffixFirst = (
+  managed: PinvokeSpelling,
+  nativeFormat: string | null,
+): boolean =>
+  windowsDecorations(managed, nativeFormat) &&
+  (managed.char_set === "unicode" ||
+    (nativeFormat === "pe" && managed.char_set === "auto"));
+
 const candidateNames = (
-  managed: Pick<
-    PinvokeImport,
-    "import_name" | "char_set" | "call_convention" | "no_mangle"
-  >,
+  managed: PinvokeSpelling,
   nativeFormat: string | null,
 ): readonly string[] => {
   if (managed.import_name.length === 0) return [];
   const names = new Set<string>([managed.import_name]);
-  // Unix P/Invoke lookup uses the declared entry point directly, regardless of
-  // marshalling charset or calling convention. Keep Windows decorations local
-  // to PE or an unresolved native platform; metadata flags remain unchanged.
-  if (
-    !managed.no_mangle &&
-    nativeFormat !== "elf" &&
-    nativeFormat !== "mach-o"
-  ) {
-    if (
-      managed.char_set === "unicode" ||
-      (nativeFormat === "pe" && managed.char_set === "auto")
-    )
+  if (windowsDecorations(managed, nativeFormat)) {
+    if (wideSuffixFirst(managed, nativeFormat))
       names.add(`${managed.import_name}W`);
     if (
       managed.char_set === "ansi" ||
@@ -351,11 +361,23 @@ const matchPinvoke = (
       symbol,
       moduleFormatsByEvidenceId.get(symbol.evidence_id) ?? null,
     );
-  const exact = candidates.find(
+  const wide = candidates.find(
     (symbol) =>
-      managed.import_name === lookupSymbolName(symbol) &&
+      wideSuffixFirst(
+        managed,
+        moduleFormatsByEvidenceId.get(symbol.evidence_id) ?? null,
+      ) &&
+      sameSymbolName(`${managed.import_name}W`, symbol) &&
       moduleRelation(symbol) === "match",
   );
+  const exact =
+    wide === undefined
+      ? candidates.find(
+          (symbol) =>
+            managed.import_name === lookupSymbolName(symbol) &&
+            moduleRelation(symbol) === "match",
+        )
+      : undefined;
   const unknownModule = candidates.find(
     (symbol) => moduleRelation(symbol) === "unknown",
   );
@@ -364,6 +386,7 @@ const matchPinvoke = (
   );
   const selected =
     exact ??
+    wide ??
     decorated ??
     (scopeKnown
       ? candidates.find((symbol) => !hasModuleIdentity(symbol))

@@ -320,6 +320,57 @@ it("keeps Windows name candidates tied to their native Evidence format", () => {
   });
 });
 
+it.each([
+  { flags: 0x204, format: "pe", status: "inferred", name: "ExampleW" },
+  { flags: 0x206, format: "pe", status: "inferred", name: "ExampleW" },
+  { flags: 0x202, format: "pe", status: "verified", name: "Example" },
+  { flags: 0x200, format: "pe", status: "verified", name: "Example" },
+  { flags: 0x205, format: "pe", status: "verified", name: "Example" },
+  { flags: 0x204, format: "elf", status: "verified", name: "Example" },
+] as const)(
+  "selects the Windows lookup order for $flags $format when both spellings exist",
+  ({ flags, format, status, name }) => {
+    const bytes = buildManagedPeFixture({
+      pinvoke: {
+        mappingFlags: flags,
+        importName: "Example",
+        moduleName: "nativehelper.dll",
+      },
+    });
+    const target = managedPeFixtureTarget(bytes);
+    const managed = createEvidence(
+      target,
+      exampleInput().managed_boundaries.provider,
+      {
+        operation: "inspect_managed_native_boundaries",
+        parameters: {},
+        result: inspectManagedNativeBoundariesBytes(bytes, target),
+      },
+    );
+    const result = verifyManagedNativeVerificationSource(
+      readFixtureSource({
+        managed_boundaries: managed,
+        native_observations: [
+          nativeFunctionEvidence(
+            "/fixtures/nativehelper.dll",
+            format,
+            "Example",
+          ),
+          nativeFunctionEvidence(
+            "/fixtures/nativehelper.dll",
+            format,
+            "ExampleW",
+          ),
+        ],
+      }),
+    );
+    expect(result.pinvoke_imports[0]).toMatchObject({
+      status,
+      matched_native: { name },
+    });
+  },
+);
+
 describe("managed/native boundary Evidence identity", () => {
   it("rejects managed boundary Evidence whose subject digest differs from its artifact", () => {
     const input = exampleInput();
