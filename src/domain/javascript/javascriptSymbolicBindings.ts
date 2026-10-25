@@ -12,6 +12,7 @@ import {
   indexJavaScriptElectronIdentitySteps,
   type JavaScriptElectronIdentity,
 } from "./javascriptSemanticAnalysis.js";
+import { semanticOpaqueBindingReadMayHaveChanged } from "./javascriptSemanticOpaqueEffects.js";
 import { semanticArrayIndex } from "./javascriptSemanticPropertyPaths.js";
 import { symbolicLogicalRight } from "./javascriptSymbolicControlFlow.js";
 import {
@@ -712,6 +713,8 @@ export class JavaScriptSymbolicBindings {
         : symbolicUnknown("unbound identifier");
     if (binding.definitions.some((d) => d.kind === "assignment"))
       return symbolicUnknown("reassigned binding");
+    if (semanticOpaqueBindingReadMayHaveChanged(binding, node, this.state))
+      return symbolicUnknown("direct eval may have changed this binding");
     // Electron member identity is checked at the selected property. A write
     // to one method must not erase the module origin or unaffected siblings.
     const electronOrigin = this.#electronIdentity.exportPath(node);

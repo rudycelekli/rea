@@ -129,3 +129,53 @@ it("retains possible Electron writes through a binding made uncertain by eval", 
     ),
   ).toHaveLength(0);
 });
+
+const electronIn = (source: string) => {
+  const parsed = parseJavaScriptSource(source, "main.cjs");
+  if (parsed === null) throw new Error("Expected valid CommonJS fixture");
+  expect(parsed.errors).toEqual([]);
+  return analyzeParsedJavaScriptStaticSource(source, parsed).electron;
+};
+
+const replaceAll =
+  'eval("s={ipcMain:{on(){},handle(){}},ipcRenderer:{send(){},invoke(){}},contextBridge:{exposeInMainWorld(){}}}");';
+
+it.each([
+  ["ipcMain.on", 's.ipcMain.on("chan",()=>{});', "ipc"],
+  ["ipcMain.handle", 's.ipcMain.handle("chan",()=>{});', "ipc"],
+  ["ipcRenderer.send", 's.ipcRenderer.send("chan");', "ipc"],
+  ["ipcRenderer.invoke", 's.ipcRenderer.invoke("chan");', "ipc"],
+  [
+    "contextBridge.exposeInMainWorld",
+    's.contextBridge.exposeInMainWorld("api",{ping(){}});',
+    "context_bridge_apis",
+  ],
+] as const)(
+  "does not report %s through a binding replaced by direct eval",
+  (_name, call, collection) => {
+    for (const wrap of [
+      (body: string) => bootstrap(`let s=n(45840);${body}`),
+      (body: string) => `(()=>{let s=require("electron");${body}})();`,
+    ]) {
+      expect(electronIn(wrap(call))[collection]).toHaveLength(1);
+      expect(electronIn(wrap(`${replaceAll}${call}`))[collection]).toEqual([]);
+    }
+  },
+);
+
+it("keeps IPC registered before a direct eval replaces the binding", () => {
+  const electron = electronIn(
+    `(()=>{let s=require("electron");s.ipcMain.on("before",()=>{});${replaceAll}s.ipcMain.on("after",()=>{})})();`,
+  );
+  expect(electron.ipc.map(({ channel }) => channel)).toEqual(["before"]);
+});
+
+it("keeps IPC through a binding a strict nested eval cannot replace", () => {
+  expect(
+    electronIn(
+      bootstrap(
+        'const s=n(45840);function other(){eval("var s={}");}other();s.ipcMain.on("chan",()=>{});',
+      ),
+    ).ipc,
+  ).toHaveLength(1);
+});
