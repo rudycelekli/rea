@@ -66,3 +66,78 @@ it.each([
     }),
   );
 });
+
+it.each([
+  {
+    lineNumber: -3,
+    columnNumber: 7.5,
+    line: null,
+    column: null,
+    invalid: true,
+  },
+  { lineNumber: 3, columnNumber: -2, line: 3, column: null, invalid: true },
+  { lineNumber: "3", columnNumber: 2, line: null, column: 2, invalid: true },
+  { lineNumber: 0, columnNumber: 0, line: 0, column: 0, invalid: false },
+  { lineNumber: 12, columnNumber: 4, line: 12, column: 4, invalid: false },
+  { line: null, column: null, invalid: false },
+])(
+  "preserves source coordinate uncertainty across console and initiator events: %j",
+  ({ lineNumber, columnNumber, line, column, invalid }) => {
+    const capture = new CdpCaptureEvents(
+      inspectWebPageInputSchema.parse({
+        cdp_endpoint: origin,
+        allowed_origins: [origin],
+        target_id: "allowed-page",
+      }),
+      new Set([origin]),
+    );
+    const frame = {
+      url: `${origin}/app.js`,
+      ...(lineNumber === undefined ? {} : { lineNumber }),
+      ...(columnNumber === undefined ? {} : { columnNumber }),
+    };
+    capture.ingest({
+      method: "Runtime.consoleAPICalled",
+      params: {
+        type: "log",
+        args: [],
+        timestamp: 1,
+        stackTrace: { callFrames: [frame] },
+      },
+    });
+    capture.ingest({
+      method: "Network.requestWillBeSent",
+      params: {
+        requestId: "request",
+        timestamp: 1,
+        type: "Fetch",
+        request: { url: `${origin}/api`, method: "GET", headers: {} },
+        initiator: { type: "script", stack: { callFrames: [frame] } },
+      },
+    });
+    expect(capture.console[0]).toMatchObject({
+      url: `${origin}/app.js`,
+      line,
+      column,
+    });
+    expect(capture.network.get("request")?.initiator).toMatchObject({
+      url: `${origin}/app.js`,
+      line,
+      column,
+    });
+    for (const section of ["console_events", "network_initiators"]) {
+      const exclusions = capture.completeness
+        .snapshot()
+        .excluded.filter(
+          (item) =>
+            item.section === section &&
+            item.reason === "invalid_protocol_value",
+        );
+      expect(exclusions).toEqual(
+        invalid
+          ? [{ section, reason: "invalid_protocol_value", count: 1 }]
+          : [],
+      );
+    }
+  },
+);

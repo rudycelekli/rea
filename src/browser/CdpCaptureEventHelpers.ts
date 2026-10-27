@@ -3,7 +3,6 @@ import { mediaTypeEssence } from "../domain/analysisView/recordedMediaType.js";
 import {
   admitRecords,
   isHttpUrl,
-  numberValue,
   recordValue,
   cdpStringValue,
   type UnknownRecord,
@@ -58,9 +57,36 @@ export const exclusionReasonForUrl = (
       ? "disallowed_origin"
       : "unsupported_url";
 
-export const integerOrNull = (value: unknown): number | null => {
-  const number = numberValue(value);
-  return number === undefined ? null : Math.max(0, Math.trunc(number));
+export interface CdpSourceCoordinates {
+  readonly line: number | null;
+  readonly column: number | null;
+}
+
+/** Interpret zero-based protocol positions without repairing malformed observations. */
+export const readCdpSourceCoordinates = (
+  frame: UnknownRecord | undefined,
+): Result<
+  CdpSourceCoordinates,
+  {
+    readonly _tag: "MalformedCdpSourceCoordinates";
+    readonly coordinates: CdpSourceCoordinates;
+  }
+> => {
+  let malformed = false;
+  const coordinate = (value: unknown): number | null => {
+    if (value === undefined) return null;
+    if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0)
+      return value;
+    malformed = true;
+    return null;
+  };
+  const coordinates = {
+    line: coordinate(frame?.lineNumber),
+    column: coordinate(frame?.columnNumber),
+  };
+  return malformed
+    ? err({ _tag: "MalformedCdpSourceCoordinates", coordinates })
+    : ok(coordinates);
 };
 
 export const isJsonContentType = (

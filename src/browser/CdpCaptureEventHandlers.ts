@@ -42,7 +42,7 @@ import {
   consolePrimitive,
   exclusionReasonForUrl,
   initiatorLocation,
-  integerOrNull,
+  readCdpSourceCoordinates,
   isJsonMediaType,
   topCallFrame,
 } from "./CdpCaptureEventHelpers.js";
@@ -334,6 +334,9 @@ export const handleRequestWillBeSent = (
   if (!location.ok)
     state.completeness.exclude("network_initiators", "invalid_protocol_value");
   const initiatorFrame = location.ok ? location.value : undefined;
+  const initiatorCoordinates = readCdpSourceCoordinates(initiatorFrame);
+  if (!initiatorCoordinates.ok)
+    state.completeness.exclude("network_initiators", "invalid_protocol_value");
   const rawInitiatorUrl = cdpStringValue(initiatorFrame?.url);
   const initiatorUrl = allowedSanitizedUrl(
     rawInitiatorUrl,
@@ -357,8 +360,9 @@ export const handleRequestWillBeSent = (
     initiator: {
       type: initiatorType,
       url: initiatorUrl?.url ?? null,
-      line: integerOrNull(initiatorFrame?.lineNumber),
-      column: integerOrNull(initiatorFrame?.columnNumber),
+      ...(initiatorCoordinates.ok
+        ? initiatorCoordinates.value
+        : initiatorCoordinates.error.coordinates),
     },
     body_shapes: requestBodyShape(state, requestId, request.source),
   });
@@ -487,6 +491,9 @@ export const handleConsoleAPICalled = (
     );
     return;
   }
+  const coordinates = readCdpSourceCoordinates(frame);
+  if (!coordinates.ok)
+    state.completeness.exclude("console_events", "invalid_protocol_value");
   // Malformed elements keep their position so retained siblings keep their
   // CDP argument indices; a missing inventory is unknown, not empty.
   const arguments_ = admitRecords(params.args)?.map((argument) =>
@@ -531,8 +538,7 @@ export const handleConsoleAPICalled = (
     argument_types:
       argumentTypes?.map((argumentType) => argumentType ?? "unknown") ?? null,
     url: source.url,
-    line: integerOrNull(frame.lineNumber),
-    column: integerOrNull(frame.columnNumber),
+    ...(coordinates.ok ? coordinates.value : coordinates.error.coordinates),
     text_capture: textCapture,
   });
 };

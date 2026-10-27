@@ -37,7 +37,11 @@ import {
   walkFrameTrees,
 } from "./CdpCaptureDocuments.js";
 import { optionalCdpCommand } from "./CdpOptionalCommand.js";
-import { topCallFrame } from "./CdpCaptureEventHelpers.js";
+import {
+  topCallFrame,
+  readCdpSourceCoordinates,
+  type CdpSourceCoordinates,
+} from "./CdpCaptureEventHelpers.js";
 
 interface DiscoveryContext {
   readonly connection: CdpConnection;
@@ -519,7 +523,10 @@ const normalizeTool = (
     completeness.exclude("webmcp_tools", "invalid_protocol_value");
   const schema = declaration?.success === true ? declaration.data : null;
   const registrationFrame = topCallFrame(value.stackTrace);
-  if (!registrationFrame.ok)
+  const coordinates = readCdpSourceCoordinates(
+    registrationFrame.ok ? registrationFrame.value : undefined,
+  );
+  if (!registrationFrame.ok || !coordinates.ok)
     completeness.exclude("webmcp_tools", "invalid_protocol_value");
   return {
     tool_key: toolKey(frame.url, frameId, name),
@@ -542,8 +549,11 @@ const normalizeTool = (
       autosubmit: annotation("autosubmit"),
     },
     registration_source: registrationSource(
-      registrationFrame.ok ? registrationFrame.value : undefined,
+      registrationFrame.ok && coordinates.ok
+        ? registrationFrame.value
+        : undefined,
       new Set(input.allowed_origins),
+      coordinates.ok ? coordinates.value : coordinates.error.coordinates,
     ),
     trust: "page-declared-untrusted",
   };
@@ -552,14 +562,14 @@ const normalizeTool = (
 const registrationSource = (
   frame: UnknownRecord | undefined,
   allowedOrigins: ReadonlySet<string>,
+  coordinates: CdpSourceCoordinates,
 ): WebMcpDiscovery["tools"]["items"][number]["registration_source"] => {
   const url = allowedSanitizedUrl(frame?.url, allowedOrigins);
   return frame === undefined || url === undefined
     ? null
     : {
         url: url.url,
-        line: integerOrNull(frame.lineNumber),
-        column: integerOrNull(frame.columnNumber),
+        ...coordinates,
       };
 };
 
@@ -609,8 +619,3 @@ const toolKey = (frameUrl: string, frameId: string, name: string): string =>
   `webmcp_${createHash("sha256")
     .update(compositeKey([frameUrl, frameId, name]))
     .digest("hex")}`;
-
-const integerOrNull = (value: unknown): number | null => {
-  const number = numberValue(value);
-  return number === undefined ? null : Math.max(0, Math.trunc(number));
-};

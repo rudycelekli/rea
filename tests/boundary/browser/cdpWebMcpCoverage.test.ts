@@ -190,3 +190,59 @@ it("retains replay and live subframe tools without claiming replay covered older
     expect.stringContaining("pre-existing subframe registrations"),
   );
 });
+
+it.each([
+  { lineNumber: -3, columnNumber: 7.5, invalid: true },
+  { lineNumber: 4, columnNumber: -2, invalid: true },
+  { lineNumber: 0, columnNumber: 0, invalid: false },
+  { lineNumber: 12, columnNumber: 4, invalid: false },
+])(
+  "does not invent WebMCP registration coordinates: %j",
+  async ({ lineNumber, columnNumber, invalid }) => {
+    const browser = await startFakeCdpBrowser({
+      webMcpTools: true,
+      webMcpStackTrace: (origin) => ({
+        callFrames: [{ url: `${origin}/app.js`, lineNumber, columnNumber }],
+      }),
+    });
+    trackBrowser(browser);
+    const result = await new CdpBrowserProvider().discoverWebMcpTools(
+      discoverWebMcpToolsInputSchema.parse({
+        cdp_endpoint: browser.endpoint,
+        target_id: "allowed-page",
+        allowed_origins: [browser.allowedOrigin],
+        observation_ms: 0,
+      }),
+    );
+    if (!result.ok) throw result.error;
+    const tool = result.value.tools.items.find(
+      (item) => item.name === "search_orders",
+    );
+    expect(tool).toBeDefined();
+    expect(tool?.registration_source).toEqual(
+      invalid
+        ? null
+        : {
+            url: `${browser.allowedOrigin}/app.js`,
+            line: lineNumber,
+            column: columnNumber,
+          },
+    );
+    const exclusions = result.value.completeness.excluded.filter(
+      (item) =>
+        item.section === "webmcp_tools" &&
+        item.reason === "invalid_protocol_value",
+    );
+    expect(exclusions).toEqual(
+      invalid
+        ? [
+            {
+              section: "webmcp_tools",
+              reason: "invalid_protocol_value",
+              count: 1,
+            },
+          ]
+        : [],
+    );
+  },
+);
