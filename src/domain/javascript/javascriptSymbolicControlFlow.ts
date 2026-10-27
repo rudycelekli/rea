@@ -57,14 +57,23 @@ export const symbolicLogicalRight = (
 export const symbolicDefiniteExit = (
   node: t.Node | null | undefined,
   depth = 0,
+  breakLabels: ReadonlySet<string> = new Set(),
 ): boolean => {
   if (!node || depth >= 128) return false;
   if (t.isReturnStatement(node) || t.isThrowStatement(node)) return true;
+  if (t.isBreakStatement(node))
+    return (
+      node.label !== null &&
+      node.label !== undefined &&
+      breakLabels.has(node.label.name)
+    );
   if (t.isBlockStatement(node))
-    return node.body.some((child) => symbolicDefiniteExit(child, depth + 1));
+    return node.body.some((child) =>
+      symbolicDefiniteExit(child, depth + 1, breakLabels),
+    );
   return (
     t.isIfStatement(node) &&
-    symbolicDefiniteExit(node.consequent, depth + 1) &&
-    symbolicDefiniteExit(node.alternate, depth + 1)
+    symbolicDefiniteExit(node.consequent, depth + 1, breakLabels) &&
+    symbolicDefiniteExit(node.alternate, depth + 1, breakLabels)
   );
 };

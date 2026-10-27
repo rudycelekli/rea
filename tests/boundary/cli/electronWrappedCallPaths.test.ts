@@ -259,6 +259,18 @@ cliTest(
         coverage: "partial",
       },
       {
+        name: "conditional labelled break",
+        body: 'guard:{if(x)break guard;e.contextBridge.exposeInMainWorld("api",{copy:()=>e.ipcRenderer.send("x")});}',
+        conditions: ["!(x)"],
+        coverage: "partial",
+      },
+      {
+        name: "inner labelled break consumed before exposure",
+        body: 'guard:{inner:{if(x)break inner;}e.contextBridge.exposeInMainWorld("api",{copy:()=>e.ipcRenderer.send("x")});}',
+        conditions: [],
+        coverage: "complete",
+      },
+      {
         name: "definite early return",
         body: 'return;e.contextBridge.exposeInMainWorld("api",{copy:()=>e.ipcRenderer.send("x")});',
         conditions: [],

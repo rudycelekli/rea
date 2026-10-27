@@ -1,6 +1,34 @@
 import { describe, expect, it } from "vitest";
 import { analyzeJavaScriptStaticSource } from "./javascriptStaticAnalysis.js";
 
+it.each([
+  ["same block", "guard: { if (!ready) break guard; EXPOSE }", ["!(!ready)"]],
+  [
+    "outer block",
+    "guard: { { if (!ready) break guard; EXPOSE } }",
+    ["!(!ready)"],
+  ],
+  ["inner label", "guard: { inner: { if (!ready) break inner; } EXPOSE }", []],
+  ["following label", "guard: { if (!ready) break guard; } EXPOSE", []],
+  ["switch", "{ switch (ready) { case false: break; } EXPOSE }", []],
+] as const)(
+  "retains target-aware labelled break guards: %s",
+  (_name, body, expected) => {
+    const result = analyzeJavaScriptStaticSource(`
+    const { contextBridge, ipcRenderer } = require("electron");
+    const ready = process.env.APP_READY;
+    ${body.replace("EXPOSE", 'contextBridge.exposeInMainWorld("api", { ping: () => ipcRenderer.invoke("ping") });')}
+  `);
+    const paths = result.electron.call_paths?.filter(
+      (path) => path.entry === "api.ping",
+    );
+    expect(paths).toHaveLength(1);
+    expect(
+      paths?.[0]?.conditions.map((condition) => condition.expression),
+    ).toEqual(expected);
+  },
+);
+
 it("preserves every direct observation in a long flat sibling block", () => {
   const channels = Array.from({ length: 256 }, (_, index) => `flat:${index}`);
   const result = analyzeJavaScriptStaticSource(`const e=require("electron"); {
