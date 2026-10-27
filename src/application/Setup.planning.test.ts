@@ -276,6 +276,51 @@ describe("setup workflow", () => {
 });
 
 describe("setup client selection", () => {
+  it.each([false, true])(
+    "omits detected manual connectors from automatic scope with supported client: %s",
+    async (includeCodex) => {
+      const host = new FakeSetupHost();
+      host.doctorHealthy = true;
+      const manual = {
+        name: "grok_bot",
+        configPath: "/home/user/.grokbot",
+        format: "unsupported" as const,
+      };
+      const codex = {
+        name: "codex",
+        configPath: "/home/user/.codex/config.toml",
+        format: "toml" as const,
+      };
+      host.clients = includeCodex ? [manual, codex] : [manual];
+      const expected = includeCodex ? ["codex"] : [];
+
+      const result = await runSetup(
+        { ...options(true), allDetectedClients: true, installSkill: true },
+        host,
+      );
+
+      expect(result.status).toBe("ready");
+      expect(
+        result.plannedActions
+          .filter(({ kind }) => kind === "configure_client")
+          .map(({ id }) => id),
+      ).toEqual(expected.map((id) => `configure_client:${id}`));
+      expect(host.configurations).toBe(expected.length);
+      expect(host.skillInstalls).toBe(1);
+      expect(host.doctorScopes.at(-1)).toMatchObject({
+        clients: expected,
+        skillClients: expected,
+        skill: true,
+      });
+      expect(result.clientStates).toContainEqual(
+        expect.objectContaining({
+          client: expect.objectContaining({ name: "grok_bot" }),
+          detected: true,
+        }),
+      );
+    },
+  );
+
   it.each([
     {
       name: "explicit clients before detected clients without duplicates",

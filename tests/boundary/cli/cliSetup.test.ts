@@ -280,6 +280,43 @@ cliTest.skipIf(process.platform === "win32")(
   },
 );
 
+cliTest(
+  "automatic setup skips a detected manual-only connector",
+  async ({ cli }) => {
+    const home = await createTestTempDirectory("rea-manual-client-setup-");
+    const marker = join(home, ".grokbot");
+    await mkdir(marker);
+    const result = await cli.run({
+      arguments: ["setup", "--all-detected", "--yes", "--json"],
+      cwd: home,
+      environment: {
+        HOME: home,
+        USERPROFILE: home,
+        CODEX_HOME: join(home, ".codex"),
+        XDG_CONFIG_HOME: join(home, ".config"),
+        XDG_DATA_HOME: join(home, ".local", "share"),
+        XDG_CACHE_HOME: join(home, ".cache"),
+      },
+      timeoutMs: 20_000,
+    });
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(result.json).toMatchObject({ status: "ready" });
+    expect(await readdir(marker)).toEqual([]);
+    expect(
+      await readFile(
+        join(
+          home,
+          ".agents",
+          "skills",
+          "reverse-engineer-anything",
+          "SKILL.md",
+        ),
+        "utf8",
+      ),
+    ).toContain("name: reverse-engineer-anything");
+  },
+);
+
 describe("interactive setup journey", () => {
   it("shows detected and absent clients without preselecting detected clients", async () => {
     const result = await runJourney(

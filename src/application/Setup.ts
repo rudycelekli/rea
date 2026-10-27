@@ -155,7 +155,15 @@ const runSetupWorkflow = async (
   let selectedClientIds = [
     ...new Set(
       options.allDetectedClients
-        ? [...(requestedClientIds ?? []), ...discovery.detectedClientIds]
+        ? [
+            ...(requestedClientIds ?? []),
+            ...discovery.clientStates
+              .filter(
+                ({ client, detected }) =>
+                  detected && client.format !== "unsupported",
+              )
+              .map(({ client }) => client.name),
+          ]
         : (requestedClientIds ?? discovery.defaultClientIds),
     ),
   ];
