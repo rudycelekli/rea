@@ -426,7 +426,7 @@ export interface JavaScriptSemanticModuleLink {
   readonly location: JavaScriptSourceRange;
 }
 
-/** Syntactic influence into one simple assignment target; no value evaluation. */
+/** Syntactic influence into an assignment or initializer target; no value evaluation. */
 export interface JavaScriptSemanticAssignmentFlow {
   readonly target: JavaScriptSourceRange;
   readonly source: JavaScriptSourceRange;

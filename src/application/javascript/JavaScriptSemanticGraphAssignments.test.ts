@@ -4,6 +4,58 @@ import { graphForJavaScript } from "../../../tests/fixtures/javascriptSemanticGr
 import { queryJavaScriptSemanticGraph } from "../../domain/javascript/javascriptSemanticQuery.js";
 
 it.each([
+  ["binary", 'base + "/x"'],
+  ["template", "`${base}/x`"],
+  ["nested", '(base + "/x").toLowerCase()'],
+])(
+  "retains %s initializer influence without claiming an alias",
+  (_name, expression) => {
+    const graph = graphForJavaScript(`
+    const base = "https://example.test";
+    const endpoint = ${expression};
+    export function send() { return fetch(endpoint); }
+  `);
+    const query = (include: boolean) =>
+      queryJavaScriptSemanticGraph(
+        graph,
+        javaScriptSemanticQueryInputSchema.parse({
+          seed: { kind: "literal", value: "https://example.test" },
+          direction: "forward-influence",
+          include_ambiguous_dynamic_edges: include,
+        }),
+      );
+    expect(query(true).nodes.map((node) => node.label)).toContain("argument 0");
+    expect(query(false).status).not.toBe("found");
+    expect(
+      query(true).relations.some(
+        (edge) =>
+          edge.properties.assignment_operator === "=" &&
+          edge.resolution === "candidate",
+      ),
+    ).toBe(true);
+  },
+);
+
+it("does not attribute deferred initializer callback reads to its binding", () => {
+  const graph = graphForJavaScript(
+    'const base = "https://example.test"; const callback = () => base + "/x";',
+  );
+  const trace = queryJavaScriptSemanticGraph(
+    graph,
+    javaScriptSemanticQueryInputSchema.parse({
+      seed: { kind: "literal", value: "https://example.test" },
+      direction: "forward-influence",
+      include_ambiguous_dynamic_edges: true,
+    }),
+  );
+  expect(
+    trace.nodes
+      .filter((node) => node.kind === "binding")
+      .map((node) => node.label),
+  ).not.toContain("callback");
+});
+
+it.each([
   ["binding", "speed = accel; return speed;", "speed"],
   ["property", "state.speed = accel; return state.speed;", "read:/speed"],
   ["compound", "state.speed += accel; return state.speed;", "read:/speed"],

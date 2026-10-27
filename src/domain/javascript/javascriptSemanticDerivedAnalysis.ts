@@ -124,7 +124,7 @@ export function* collectJavaScriptDerivedSemanticsSteps(
   };
 }
 
-/** Keep assignment syntax in the IR so graph consumers never reparse source. */
+/** Keep assignment and initializer syntax in the IR so consumers never reparse source. */
 function* collectAssignmentFlowsSteps(
   program: t.Program,
   state: JavaScriptSemanticAnalysisState,
@@ -137,17 +137,33 @@ function* collectAssignmentFlowsSteps(
   yield* traverseJavaScriptValueAstSteps(program, state.erasedSyntaxNodes, {
     enter: (node, parent) => {
       stack.enter(node, parent);
-      if (!t.isAssignmentExpression(node)) return;
-      const target = unwrapJavaScriptExpression(node.left).node;
+      let target: t.Node;
+      let source: t.Node;
+      let operator: string;
+      if (t.isAssignmentExpression(node)) {
+        target = unwrapJavaScriptExpression(node.left).node;
+        source = unwrapJavaScriptExpression(node.right).node;
+        operator = node.operator;
+      } else if (t.isVariableDeclarator(node) && node.init != null) {
+        target = unwrapJavaScriptExpression(node.id).node;
+        source = unwrapJavaScriptExpression(node.init).node;
+        operator = "=";
+      } else return;
       // Destructuring has its own property-selection owner.
       if (!t.isIdentifier(target) && !t.isMemberExpression(target)) return;
-      const source = unwrapJavaScriptExpression(node.right).node;
+      // Exact aliases already have a value/identity projection. Retain the
+      // missing syntactic inputs of transformed initializer values separately.
+      if (
+        t.isVariableDeclarator(node) &&
+        (t.isIdentifier(source) || t.isMemberExpression(source))
+      )
+        return;
       flows.push({
         target: range(target),
         source: range(source),
         sourceIsReference:
           t.isIdentifier(source) || t.isMemberExpression(source),
-        operator: node.operator,
+        operator,
         ownerCallableId: stack.callables.at(-1) ?? null,
       });
     },

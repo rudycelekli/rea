@@ -798,6 +798,8 @@ function* projectDefinitionsAndReferences(
         label: definition.kind,
         functionNodeId: bindingNode.function_node_id,
       });
+      if (definition.kind === "variable" && definitionNode !== null)
+        context.writeNodes.push(definitionNode);
       addRelation(context.state, {
         source: definitionNode,
         target: bindingNode,

@@ -12,6 +12,12 @@ cliTest(
     const root = await createTestTempDirectory("rea-assignment-influence-");
     for (const [name, body, label] of [
       ["declaration", "const next = accel; return next;", "next"],
+      ["binary-initializer", "const next = accel + 1; return next;", "next"],
+      [
+        "template-initializer",
+        "const next = `${accel}/x`; return next;",
+        "next",
+      ],
       ["variable", "speed = accel; return speed;", "speed"],
       ["property", "state.speed = accel; return state.speed;", "speed"],
       ["compound", "state.speed += accel; return state.speed;", "speed"],
@@ -55,13 +61,16 @@ cliTest(
       const { normalized_result: result } = z
         .object({ normalized_result: javaScriptSemanticTraceResultSchema })
         .parse(traced.json);
-      expect(
-        result.nodes.some(
-          (node) =>
-            ["binding", "property-slot"].includes(node.kind) &&
-            node.label === label,
-        ),
-      ).toBe(true);
+      if (name.endsWith("-initializer"))
+        expect(result.status).not.toBe("found");
+      else
+        expect(
+          result.nodes.some(
+            (node) =>
+              ["binding", "property-slot"].includes(node.kind) &&
+              node.label === label,
+          ),
+        ).toBe(true);
       // Later property reads remain uncertain after a mutable write. Follow
       // candidates explicitly rather than upgrading their pre-existing resolution.
       await writeFile(
@@ -78,6 +87,13 @@ cliTest(
       const expandedResult = z
         .object({ normalized_result: javaScriptSemanticTraceResultSchema })
         .parse(expanded.json).normalized_result;
+      expect(
+        expandedResult.nodes.some(
+          (node) =>
+            ["binding", "property-slot"].includes(node.kind) &&
+            node.label === label,
+        ),
+      ).toBe(true);
       expect(expandedResult.nodes.map((node) => node.label)).toContain(
         "return",
       );
