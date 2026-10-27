@@ -371,11 +371,25 @@ const preview = (record: WebNetworkCaptureRecord, format: string) => {
         : null;
     const mitmproxyFacets =
       index !== null && textualFlowType(index) ? index : null;
-    for (const key of ["session_id", "name", "time", "startedDateTime", "type"])
-      if (Object.hasOwn(source, key) && source[key] !== undefined) {
-        reported[key] = source[key];
-        selectedPointers.add(`/${key}`);
-      }
+    // HAR entry names/type/session_id are unknown extensions, not record headlines.
+    // Other formats own those names as event or session facts.
+    const headlineKeys =
+      format === "har"
+        ? ["time", "startedDateTime"]
+        : ["session_id", "name", "time", "startedDateTime", "type"];
+    for (const key of headlineKeys) {
+      const value = source[key];
+      if (
+        !Object.hasOwn(source, key) ||
+        value === undefined ||
+        (format === "har" &&
+          value !== null &&
+          typeof value !== (key === "time" ? "number" : "string"))
+      )
+        continue;
+      reported[key] = value;
+      selectedPointers.add(`/${key}`);
+    }
     for (const key of ["request", "response"]) {
       const value = source[key];
       if (!Object.hasOwn(source, key) || value === undefined) continue;

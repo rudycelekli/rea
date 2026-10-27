@@ -41,7 +41,9 @@ Use `normalized_result.parent_evidence_id` with `inspect_analysis_view`:
 
 Preview pages select recorded HTTP headline fields, event names/times when
 present, original locations and byte descriptors; they omit headers, XML and
-payload content. Choose `detail: "complete"` in that view for exact record
+payload content. HAR record headlines are `time` and `startedDateTime`;
+unknown HAR extensions such as `name`, `type`, and `session_id` remain only in
+complete records. Choose `detail: "complete"` in that view for exact record
 pages, including all sidecars. Offsets follow the parent's selected record
 order; producer ordinals remain unchanged. `total_records` counts the original
 capture while `retained_records` and page coverage count records in the parent.

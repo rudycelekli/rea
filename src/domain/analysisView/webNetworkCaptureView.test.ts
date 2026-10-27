@@ -881,3 +881,73 @@ it.each(["scheme", "host", "port", "authority"])(
     expect(JSON.stringify(reported)).not.toContain("password");
   },
 );
+
+it("keeps HAR extension payloads out of preview headlines without changing complete evidence", () => {
+  const { parent, report } = capture();
+  report.format = "har";
+  const record = report.records[0]!;
+  record.reported = {
+    time: 1.25,
+    startedDateTime: "2026-10-07T13:00:00.123Z",
+    session_id: { payload: "extension-payload" },
+    name: { payload: "extension-payload" },
+    type: { body: "extension-payload" },
+    request: { method: "GET", url: "https://example.test/a" },
+    response: { status: 200, content: { text: "body-payload" } },
+  };
+  record.numeric_literals = [
+    { pointer: "/time", producer_type: "json-number", literal: "1.25" },
+    { pointer: "/name/count", producer_type: "json-number", literal: "9" },
+  ];
+  const preview = projectAnalysisView(parent, {
+    kind: "capture",
+    detail: "preview",
+    offset: 0,
+    limit: 1,
+  });
+  if (!preview.ok || preview.value.kind !== "capture")
+    throw new Error("Expected preview");
+  expect(preview.value.items[0]?.reported).toEqual({
+    time: 1.25,
+    startedDateTime: "2026-10-07T13:00:00.123Z",
+    request: { method: "GET", url: "https://example.test/a" },
+    response: { status: 200 },
+  });
+  expect(preview.value.items[0]?.numeric_literals).toEqual([
+    { pointer: "/time", producer_type: "json-number", literal: "1.25" },
+  ]);
+  expect(JSON.stringify(preview.value)).not.toContain("extension-payload");
+  expect(JSON.stringify(preview.value)).not.toContain("body-payload");
+  const complete = projectAnalysisView(parent, {
+    kind: "capture",
+    detail: "complete",
+    offset: 0,
+    limit: 1,
+  });
+  if (!complete.ok || complete.value.kind !== "capture")
+    throw new Error("Expected complete record");
+  expect(complete.value.items[0]).toEqual(record);
+});
+
+it.each(["time", "startedDateTime"])(
+  "does not expand an object-valued HAR %s from a retained parent",
+  (field) => {
+    const { parent, report } = capture();
+    report.format = "har";
+    report.records[0]!.reported = {
+      [field]: { payload: "retained-extension-body" },
+    };
+    const preview = projectAnalysisView(parent, {
+      kind: "capture",
+      detail: "preview",
+      offset: 0,
+      limit: 1,
+    });
+    if (!preview.ok || preview.value.kind !== "capture")
+      throw new Error("Expected preview");
+    expect(preview.value.items[0]?.reported).toEqual({});
+    expect(JSON.stringify(preview.value)).not.toContain(
+      "retained-extension-body",
+    );
+  },
+);

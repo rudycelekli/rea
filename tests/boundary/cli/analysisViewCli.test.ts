@@ -1,5 +1,6 @@
 import {
   apiSurfaceHar,
+  historicalHar,
   environmentManifestHar,
 } from "../../fixtures/historicalHar.js";
 import { inspectAnalysisView } from "../../../src/application/analysisView/AnalysisViewService.js";
@@ -1360,5 +1361,74 @@ cliTest.for(
       delivery,
     });
     expect(proof.listeners).toBeGreaterThan(0);
+  },
+);
+
+cliTest(
+  "keeps HAR extension bodies out of public capture previews and retains complete Evidence",
+  async ({ cli }) => {
+    const root = await createTestTempDirectory("rea-har-preview-extensions-");
+    const source = historicalHar();
+    const entry = source.log.entries[0]!;
+    const extension = { payload: "HAR-EXTENSION-PAYLOAD" };
+    const input = JSON.stringify({
+      ...source,
+      log: {
+        ...source.log,
+        entries: [
+          { ...entry, name: extension, type: extension, session_id: extension },
+        ],
+      },
+    });
+    const path = join(root, "capture.har");
+    await writeFile(path, input);
+    const captured = await cli.run({
+      arguments: ["inspect-web-network-capture", path, "har", "--json"],
+    });
+    expect(captured.exitCode, captured.stdout).toBe(0);
+    const parent = parseEvidence(captured.json);
+    for (const detail of ["preview", "complete"] as const) {
+      const request = join(root, `${detail}.json`);
+      await writeFile(
+        request,
+        JSON.stringify({
+          source: { kind: "inline", evidence: parent },
+          view: { kind: "capture", detail, offset: 0, limit: 1 },
+        }),
+      );
+      const result = await cli.run({
+        arguments: ["inspect-analysis-view", request, "--json"],
+      });
+      expect(result.exitCode, result.stdout).toBe(0);
+      const evidence = parseEvidence(result.json);
+      if (detail === "preview") {
+        expect(result.stdout).not.toContain("HAR-EXTENSION-PAYLOAD");
+        expect(evidence.normalized_result).toMatchObject({
+          items: [
+            {
+              reported: {
+                time: entry.time,
+                startedDateTime: entry.startedDateTime,
+              },
+            },
+          ],
+        });
+      } else {
+        expect(evidence.normalized_result).toMatchObject({
+          items: [
+            {
+              reported: {
+                name: extension,
+                type: extension,
+                session_id: extension,
+                response: { content: { text: entry.response.content.text } },
+              },
+            },
+          ],
+        });
+      }
+      expect(evidence.evidence_links).toContain(parent.evidence_id);
+    }
+    expect(await readFile(path, "utf8")).toBe(input);
   },
 );
