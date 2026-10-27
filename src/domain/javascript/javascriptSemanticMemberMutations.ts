@@ -23,6 +23,7 @@ import {
 
 import {
   resolveSemanticBindingState,
+  semanticBindingLookupAt,
   type JavaScriptBindingIndex,
   type JavaScriptSemanticBindingState,
   type JavaScriptSemanticAnalysisState,
@@ -540,17 +541,21 @@ export function* collectSemanticMemberMutationsSteps(
   // same node otherwise repeat the same scope walk.
   const resolvedBindings = new WeakMap<
     t.Node,
-    JavaScriptSemanticBindingState | null
+    ReturnType<typeof semanticBindingLookupAt>
   >();
+  const lookupBinding = (node: t.Node, name: string) => {
+    const cached = resolvedBindings.get(node);
+    if (cached !== undefined) return cached;
+    const lookup = semanticBindingLookupAt(state, node, name);
+    resolvedBindings.set(node, lookup);
+    return lookup;
+  };
   const resolveBinding = (
     node: t.Node,
     name: string,
   ): JavaScriptSemanticBindingState | undefined => {
-    const cached = resolvedBindings.get(node);
-    if (cached !== undefined) return cached ?? undefined;
-    const resolved = resolveSemanticBindingState(state, node, name);
-    resolvedBindings.set(node, resolved ?? null);
-    return resolved;
+    const lookup = lookupBinding(node, name);
+    return lookup.kind === "binding" ? lookup.binding : undefined;
   };
   const nodeIdentities = new WeakMap<t.Node, number>();
   let nextNodeIdentity = 0;
@@ -842,8 +847,14 @@ export function* collectSemanticMemberMutationsSteps(
         continue;
       }
       if (t.isIdentifier(expression)) {
-        const binding = resolveBinding(expression, expression.name);
-        if (binding === undefined) {
+        const lookup = lookupBinding(expression, expression.name);
+        const binding =
+          lookup.kind === "binding" || lookup.kind === "uncertain-binding"
+            ? lookup.binding
+            : undefined;
+        // A dynamic with environment may select either its own property or the
+        // retained outer binding. Preserve both possible mutation owners.
+        if (lookup.kind !== "binding") {
           for (const path of ambientPaths(
             expression,
             current.originAt,
@@ -877,8 +888,8 @@ export function* collectSemanticMemberMutationsSteps(
               arrayPrototypeIterationMayChange(current.path.slice(2)))
           )
             state.arrayIterationUnknown = true;
-          continue;
         }
+        if (binding === undefined) continue;
         // An alias restored from a saved reference can revisit the same binding
         // at an earlier capture or a shorter getter-receiver path. Only a
         // repeated capture and path closes a cycle.

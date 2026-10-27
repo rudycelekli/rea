@@ -3,6 +3,28 @@ import { expect, it } from "vitest";
 import { graphForJavaScript } from "../../../tests/fixtures/javascriptSemanticGraph.js";
 import { queryJavaScriptSemanticGraph } from "../../domain/javascript/javascriptSemanticQuery.js";
 
+it("does not trace a stale property literal after a possible with-body mutation", () => {
+  const graph = graphForJavaScript(`
+    const shared = { mode: "initial", keep: 1 };
+    const unrelated = {};
+    with (unrelated) { shared.mode = "updated"; }
+    module.exports.read = function read() { return shared.mode; };
+  `);
+  const trace = queryJavaScriptSemanticGraph(
+    graph,
+    javaScriptSemanticQueryInputSchema.parse({
+      seed: { kind: "literal", value: "initial" },
+      direction: "forward-influence",
+    }),
+  );
+  expect(trace.status).not.toBe("found");
+  expect(
+    graph.nodes
+      .filter((node) => node.kind === "property-slot" && node.label === "mode")
+      .every((node) => node.properties.value_status !== "literal"),
+  ).toBe(true);
+});
+
 it.each([
   ["binding", "speed = accel; return speed;", "speed"],
   ["property", "state.speed = accel; return state.speed;", "read:/speed"],

@@ -955,3 +955,41 @@ it.each([
     ).toMatchObject({ status: "unknown" });
   },
 );
+
+it.each([
+  'shared.mode = "updated"',
+  'shared.mode += "updated"',
+  "delete shared.mode",
+])(
+  "invalidates the possible outer member owner across with: %s",
+  (mutation) => {
+    const result = analyzeJavaScriptSemantics(`
+    const shared = { mode: "initial", keep: 1 };
+    const unrelated = {};
+    with (unrelated) { ${mutation}; }
+    function read() { return shared.mode; }
+    function keep() { return shared.keep; }
+    module.exports = { read, keep };
+  `);
+    expect(onlyCallable(result, "read").returnSites[0]?.value.status).toBe(
+      "unknown",
+    );
+    expect(onlyCallable(result, "keep").returnSites[0]?.value).toEqual({
+      status: "literal",
+      value: 1,
+    });
+  },
+);
+
+it("preserves outer members when a lexical with-body binding owns the write", () => {
+  const result = analyzeJavaScriptSemantics(`
+    const shared = { mode: "initial" };
+    with ({}) { const shared = { mode: "local" }; shared.mode = "updated"; }
+    function read() { return shared.mode; }
+    module.exports = read;
+  `);
+  expect(onlyCallable(result, "read").returnSites[0]?.value).toEqual({
+    status: "literal",
+    value: "initial",
+  });
+});
